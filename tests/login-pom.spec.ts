@@ -1,0 +1,63 @@
+import { test, chromium, Page, Browser } from '@playwright/test';
+import { LoginPage } from '../pages/login.page';
+
+let browser: Browser;
+let page: Page;
+let loginPage: LoginPage;
+
+async function setupBrowser() {
+  browser = await chromium.launch({
+    headless: false,
+    channel: 'chrome',
+    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
+  });
+
+  const context = await browser.newContext({
+    viewport: { width: 1920, height: 1080 },
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  });
+
+  page = await context.newPage();
+  loginPage = new LoginPage(page);
+}
+
+test('POM Login: valid credentials should reach dashboard', async () => {
+  test.setTimeout(300000);
+  await setupBrowser();
+
+  await loginPage.login('ashoaib', 'test2');
+  await loginPage.expectLoginFieldsGone();
+
+  console.log('POM LOGIN TEST PASSED');
+  await browser.close();
+});
+
+test('POM Login: invalid password should stay on login page', async () => {
+  test.setTimeout(120000);
+  await setupBrowser();
+
+  await loginPage.goto();
+  await loginPage.fillUsername('ashoaib');
+  await loginPage.fillPassword('wrongpassword');
+  await loginPage.clickLogin();
+  await page.waitForTimeout(10000);
+
+  await loginPage.expectLoginFieldsVisible();
+
+  console.log('POM INVALID PASSWORD TEST PASSED');
+  await browser.close();
+});
+
+test('POM Login: empty fields should stay on login page', async () => {
+  test.setTimeout(120000);
+  await setupBrowser();
+
+  await loginPage.goto();
+  await loginPage.clickLogin();
+  await page.waitForTimeout(5000);
+
+  await loginPage.expectLoginFieldsVisible();
+
+  console.log('POM EMPTY FIELDS TEST PASSED');
+  await browser.close();
+});
