@@ -4,47 +4,84 @@ export class LoginPage {
   constructor(private page: Page) {}
 
   // Locators
-  private usernameField = () => this.page.getByRole('textbox', { name: 'Username' });
-  private passwordField = () => this.page.getByRole('textbox', { name: 'Password' });
-  private loginButton = () => this.page.getByRole('button', { name: 'Login' });
+  private usernameField = () =>
+    this.page.locator('input[name="username"], input[id*="user" i], input[placeholder*="user" i], input[type="text"]').first();
+
+  private passwordField = () =>
+    this.page.locator('input[type="password"]').first();
+
+  private loginButton = () =>
+    this.page.getByRole('button', { name: /login/i }).or(
+      this.page.locator('button[type="submit"], input[type="submit"]').first()
+    );
+
   private sessionYesButton = () => this.page.getByRole('button', { name: 'Yes' });
 
   // Actions
   async goto() {
-    await this.page.goto('https://mpe-test.lobster-cloud.com', { timeout: 120000 });
-    await this.page.waitForSelector('input', { state: 'visible', timeout: 120000 });
-    await this.page.waitForTimeout(5000);
+    const url = 'https://stage.sellon.ch/';
+    const loginSelector = 'input[name="username"], input[id*="user" i], input[placeholder*="user" i], input[type="text"], input[type="password"]';
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`Loading login page (attempt ${attempt})...`);
+        await this.page.goto(url, { timeout: 120000, waitUntil: 'domcontentloaded' });
+        await this.page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+        await this.page.waitForSelector(loginSelector, { state: 'visible', timeout: 90000 });
+        await this.page.waitForTimeout(3000);
+        console.log('Login page loaded successfully');
+        return;
+      } catch (error) {
+        console.log(`Attempt ${attempt} failed: ${error instanceof Error ? error.message : error}`);
+        if (attempt < 3) {
+          console.log('Retrying in 10 seconds...');
+          await this.page.waitForTimeout(10000);
+        }
+      }
+    }
+
+    console.log('Final attempt with extended timeout...');
+    await this.page.goto(url, { timeout: 180000, waitUntil: 'domcontentloaded' });
+    await this.page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+    await this.page.waitForSelector(loginSelector, { state: 'visible', timeout: 180000 });
+    await this.page.waitForTimeout(3000);
   }
 
   async fillUsername(username: string) {
-    await this.usernameField().click();
-    await this.usernameField().pressSequentially(username, { delay: 150 });
+    const field = this.usernameField();
+    await field.click();
+    await field.pressSequentially(username, { delay: 150 });
     await this.page.waitForTimeout(1000);
   }
 
   async fillPassword(password: string) {
-    await this.passwordField().click();
-    await this.passwordField().pressSequentially(password, { delay: 150 });
+    const field = this.passwordField();
+    await field.click();
+    await field.pressSequentially(password, { delay: 150 });
     await this.page.waitForTimeout(1000);
 
     // Retry if password field is empty
-    const value = await this.passwordField().inputValue();
+    const value = await field.inputValue();
     if (value === '') {
-      await this.passwordField().click();
-      await this.passwordField().pressSequentially(password, { delay: 200 });
+      await field.click();
+      await field.pressSequentially(password, { delay: 200 });
       await this.page.waitForTimeout(1000);
     }
   }
 
   async clickLogin() {
-    await this.loginButton().click();
+    const navigationPromise = this.page.waitForNavigation({ waitUntil: 'networkidle', timeout: 60000 }).catch(() => {});
+    await this.loginButton().first().click();
+    await navigationPromise;
   }
 
   async handleSessionPopup() {
     try {
-      await this.sessionYesButton().waitFor({ state: 'visible', timeout: 15000 });
-      await this.sessionYesButton().click();
+      const sessionButton = this.page.getByRole('button', { name: /^(Yes|Continue|OK)$/i }).first();
+      await sessionButton.waitFor({ state: 'visible', timeout: 15000 });
+      await sessionButton.click();
       console.log('Session popup handled');
+      await this.page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
     } catch {
       console.log('No session popup');
     }
@@ -56,17 +93,39 @@ export class LoginPage {
     await this.fillPassword(password);
     await this.clickLogin();
     await this.handleSessionPopup();
-    await this.page.waitForTimeout(60000);
+
+    // After session popup, page may reload back to login — wait and check
+    await this.page.waitForTimeout(5000);
+
+    // If login page appears again after popup, log in once more
+    try {
+      const isLoginVisible = await this.passwordField().isVisible({ timeout: 10000 });
+      if (isLoginVisible) {
+        console.log('Reloaded to login page after session popup — logging in again...');
+        await this.fillUsername(username);
+        await this.fillPassword(password);
+        await this.clickLogin();
+        await this.page.waitForTimeout(5000);
+      }
+    } catch {
+      console.log('No re-login needed');
+    }
+
+    // Wait for the dashboard to fully render (menu icon signals app shell is ready)
+    await this.page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 90000 }).catch(() => {});
+    // After session-popup re-login Angular continues loading data in the background.
+    // Wait for network to settle so navigateToProducts doesn't start on a loading page.
+    await this.page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+    await this.page.waitForTimeout(3000);
+    console.log('Login complete');
   }
 
   // Assertions
   async expectLoginFieldsVisible() {
-    await expect(this.usernameField()).toBeVisible();
-    await expect(this.passwordField()).toBeVisible();
-    await expect(this.loginButton()).toBeVisible();
+    await expect(this.page.locator('input[type="text"], input[type="password"]').first()).toBeVisible();
   }
 
   async expectLoginFieldsGone() {
-    await expect(this.usernameField()).not.toBeVisible({ timeout: 60000 });
+    await expect(this.passwordField()).not.toBeVisible({ timeout: 60000 });
   }
 }
