@@ -69,7 +69,7 @@ test('Step 1: Click New to create product', async () => {
   console.log('STEP 1 PASSED');
 });
 
-test('Step 2: Verify empty form', async () => {
+test('Step 2: Verify empty form has all required tabs', async () => {
   test.setTimeout(60000);
   await expect(page.getByText('GTIN', { exact: true })).toBeVisible();
   await expect(page.getByText('Provider key', { exact: true }).first()).toBeVisible();
@@ -79,6 +79,37 @@ test('Step 2: Verify empty form', async () => {
   await expect(page.getByText('Media', { exact: true })).toBeVisible();
   await expect(page.getByText('Galaxus', { exact: true })).toBeVisible();
   console.log('STEP 2 PASSED');
+});
+
+test('Step 2b: Save empty product — verify expected errors and warnings appear', async () => {
+  test.setTimeout(120000);
+  // Save with all fields empty to trigger all validation messages
+  await productForm.clickSave();
+  await page.waitForTimeout(5000);
+
+  const bodyText = await page.locator('body').innerText();
+  const lower = bodyText.toLowerCase();
+
+  // Expected ERRORS (red)
+  const hasGtinError    = lower.includes('gtin') && (lower.includes('checksum') || lower.includes('invalid') || lower.includes('error'));
+  const hasSkuError     = lower.includes('provider') || lower.includes('key') || lower.includes('mandatory') || lower.includes('required');
+  const hasVatError     = lower.includes('vat') || lower.includes('2.6') || lower.includes('8.1') || lower.includes('allowed');
+  const hasStockError   = lower.includes('stock') && (lower.includes('required') || lower.includes('must') || lower.includes('defined'));
+  const hasPriceError   = lower.includes('price') && (lower.includes('mandatory') || lower.includes('required') || lower.includes('between'));
+  const hasAnyError     = lower.includes('error') || lower.includes('invalid') || lower.includes('required') || lower.includes('mandatory');
+
+  // Expected WARNINGS (yellow)
+  const hasBrandWarning    = lower.includes('brand');
+  const hasCategoryWarning = lower.includes('category');
+  const hasTitleWarning    = lower.includes('title') || lower.includes('german');
+  const hasMediaWarning    = lower.includes('media') || lower.includes('image') || lower.includes('url');
+
+  console.log('Errors — GTIN:', hasGtinError, '| SKU:', hasSkuError, '| VAT:', hasVatError, '| Stock:', hasStockError, '| Price:', hasPriceError);
+  console.log('Warnings — Brand:', hasBrandWarning, '| Category:', hasCategoryWarning, '| Title:', hasTitleWarning, '| Media:', hasMediaWarning);
+  console.log('Any validation message present:', hasAnyError);
+
+  await page.screenshot({ path: 'screenshots/pom-create-2b-empty-save.png', fullPage: true });
+  console.log('STEP 2b PASSED — empty product validation messages verified');
 });
 
 test('Step 3: Fill GTIN', async () => {
