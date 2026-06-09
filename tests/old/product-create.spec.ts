@@ -134,7 +134,7 @@ test('Step 1: Verify product list is loaded before creating', async () => {
   // Verify New button exists
   await expect(page.getByText('New', { exact: true })).toBeVisible();
 
-  await page.screenshot({ path: 'screenshots/step1-product-list.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step1-product-list.png', fullPage: true, timeout: 5000 });
   console.log('STEP 1 PASSED - Product list verified');
 });
 
@@ -153,7 +153,7 @@ test('Step 2: Click New button to open empty product form', async () => {
   await expect(page.getByText('Master data', { exact: true })).toBeVisible();
   await expect(page.getByText('Cancel', { exact: true })).toBeVisible();
 
-  await page.screenshot({ path: 'screenshots/step2-new-product-form.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step2-new-product-form.png', fullPage: true, timeout: 5000 });
   console.log('STEP 2 PASSED - Empty product form opened');
 });
 
@@ -181,7 +181,7 @@ test('Step 3: Verify empty form shows validation hints', async () => {
   console.log('Empty form shows GTIN hint:', bodyText.includes('GTIN'));
   console.log('Empty form shows provider key hint:', bodyText.toLowerCase().includes('provider'));
 
-  await page.screenshot({ path: 'screenshots/step3-empty-form-hints.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step3-empty-form-hints.png', fullPage: true, timeout: 5000 });
   console.log('STEP 3 PASSED - Empty form structure verified');
 });
 
@@ -195,7 +195,7 @@ test('Step 4: Fill GTIN field with valid checksum', async () => {
   // GTIN-13 valid checksum: 4006381333931
   await editFieldByLabel('GTIN', '4006381333931');
 
-  await page.screenshot({ path: 'screenshots/step4-gtin-filled.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step4-gtin-filled.png', fullPage: true, timeout: 5000 });
   console.log('STEP 4 PASSED - GTIN filled');
 });
 
@@ -209,7 +209,7 @@ test('Step 5: Fill Provider key field', async () => {
   // Provider key: mandatory, A-Z a-z 0-9 spaces and . , ! ? - _ @
   await editFieldByLabel('Provider key', 'AUTO-TEST-001');
 
-  await page.screenshot({ path: 'screenshots/step5-provider-key.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step5-provider-key.png', fullPage: true, timeout: 5000 });
   console.log('STEP 5 PASSED - Provider key filled');
 });
 
@@ -223,7 +223,7 @@ test('Step 6: Fill Brand field', async () => {
   // Brand: required for stage 2, max 100 chars
   await editFieldByLabel('Brand', 'AutoTestBrand');
 
-  await page.screenshot({ path: 'screenshots/step6-brand.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step6-brand.png', fullPage: true, timeout: 5000 });
   console.log('STEP 6 PASSED - Brand filled');
 });
 
@@ -257,7 +257,7 @@ test('Step 7: Fill Title DE field', async () => {
   });
 
   console.log('  Title DE edited:', titleEdited);
-  await page.screenshot({ path: 'screenshots/step7-title.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step7-title.png', fullPage: true, timeout: 5000 });
   console.log('STEP 7 PASSED - Title DE filled');
 });
 
@@ -285,7 +285,7 @@ test('Step 8: Fill Description DE field', async () => {
   });
 
   console.log('  Description DE edited:', descEdited);
-  await page.screenshot({ path: 'screenshots/step8-description.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step8-description.png', fullPage: true, timeout: 5000 });
   console.log('STEP 8 PASSED - Description DE filled');
 });
 
@@ -299,7 +299,7 @@ test('Step 9: Fill Weight field', async () => {
   // Weight: optional, 0 to 100,000,000
   await editFieldByLabel('Weight', '250.0000');
 
-  await page.screenshot({ path: 'screenshots/step9-weight.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step9-weight.png', fullPage: true, timeout: 5000 });
   console.log('STEP 9 PASSED - Weight filled');
 });
 
@@ -310,7 +310,7 @@ test('Step 9: Fill Weight field', async () => {
 test('Step 10: Verify all Master data fields are filled', async () => {
   test.setTimeout(60000);
 
-  await page.screenshot({ path: 'screenshots/step10-master-data-complete.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step10-master-data-complete.png', fullPage: true, timeout: 5000 });
 
   // Print all current field values to verify
   const fieldValues = await page.evaluate(() => {
@@ -341,7 +341,7 @@ test('Step 11: Navigate to Price & stock tab', async () => {
   await expect(page.getByText('VAT', { exact: true })).toBeVisible();
   await expect(page.getByText('Stock quantity', { exact: true })).toBeVisible();
 
-  await page.screenshot({ path: 'screenshots/step11-price-stock-tab.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step11-price-stock-tab.png', fullPage: true, timeout: 5000 });
   console.log('STEP 11 PASSED - Price & stock tab opened');
 });
 
@@ -355,7 +355,7 @@ test('Step 12: Fill Selling price', async () => {
   // Price: mandatory, 0.0001 to 100,000,000
   await editFieldByLabel('Selling price', '49.9000');
 
-  await page.screenshot({ path: 'screenshots/step12-selling-price.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step12-selling-price.png', fullPage: true, timeout: 5000 });
   console.log('STEP 12 PASSED - Selling price filled');
 });
 
@@ -369,7 +369,7 @@ test('Step 13: Fill VAT', async () => {
   // VAT: only 2.60 or 8.10 allowed
   await editFieldByLabel('VAT', '8.10');
 
-  await page.screenshot({ path: 'screenshots/step13-vat.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step13-vat.png', fullPage: true, timeout: 5000 });
   console.log('STEP 13 PASSED - VAT filled');
 });
 
@@ -383,7 +383,7 @@ test('Step 14: Fill Stock quantity', async () => {
   // Stock: required, 0 to 99999
   await editFieldByLabel('Stock quantity', '100');
 
-  await page.screenshot({ path: 'screenshots/step14-stock-quantity.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step14-stock-quantity.png', fullPage: true, timeout: 5000 });
   console.log('STEP 14 PASSED - Stock quantity filled');
 });
 
@@ -394,7 +394,7 @@ test('Step 14: Fill Stock quantity', async () => {
 test('Step 15: Verify all Price & stock fields are filled', async () => {
   test.setTimeout(60000);
 
-  await page.screenshot({ path: 'screenshots/step15-price-stock-complete.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step15-price-stock-complete.png', fullPage: true, timeout: 5000 });
 
   const fieldValues = await page.evaluate(() => {
     const inputs = document.querySelectorAll('input:not([type="hidden"])');
@@ -419,7 +419,7 @@ test('Step 16: Save the new product', async () => {
   await page.getByText('Save', { exact: true }).click();
   await page.waitForTimeout(10000);
 
-  await page.screenshot({ path: 'screenshots/step16-product-saved.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step16-product-saved.png', fullPage: true, timeout: 5000 });
 
   const bodyText = await page.locator('body').innerText();
   console.log('After save - contains "error":', bodyText.toLowerCase().includes('error'));
@@ -436,7 +436,7 @@ test('Step 17: Verify product appears after save', async () => {
   test.setTimeout(120000);
 
   // Take screenshot of the result
-  await page.screenshot({ path: 'screenshots/step17-after-save-result.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step17-after-save-result.png', fullPage: true, timeout: 5000 });
 
   // Check if we can see our product data
   const bodyText = await page.locator('body').innerText();
@@ -464,7 +464,7 @@ test('Step 18: Validate GTIN rejects invalid checksum', async () => {
   await page.getByText('Save', { exact: true }).click();
   await page.waitForTimeout(5000);
 
-  await page.screenshot({ path: 'screenshots/step18-gtin-invalid.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step18-gtin-invalid.png', fullPage: true, timeout: 5000 });
 
   const bodyText = await page.locator('body').innerText();
   const hasGtinError = bodyText.toLowerCase().includes('checksum') || bodyText.toLowerCase().includes('gtin');
@@ -483,7 +483,7 @@ test('Step 19: Restore valid GTIN', async () => {
   await editFieldByLabel('GTIN', '4006381333931');
   await page.waitForTimeout(2000);
 
-  await page.screenshot({ path: 'screenshots/step19-gtin-restored.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step19-gtin-restored.png', fullPage: true, timeout: 5000 });
   console.log('STEP 19 PASSED - Valid GTIN restored');
 });
 
@@ -499,7 +499,7 @@ test('Step 20: Validate Provider key rejects empty value', async () => {
   await page.getByText('Save', { exact: true }).click();
   await page.waitForTimeout(5000);
 
-  await page.screenshot({ path: 'screenshots/step20-provider-key-empty.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step20-provider-key-empty.png', fullPage: true, timeout: 5000 });
 
   const bodyText = await page.locator('body').innerText();
   const hasProviderError = bodyText.toLowerCase().includes('provider') || bodyText.toLowerCase().includes('mandatory') || bodyText.toLowerCase().includes('required');
@@ -527,7 +527,7 @@ test('Step 21: Validate VAT rejects invalid value', async () => {
   await page.getByText('Save', { exact: true }).click();
   await page.waitForTimeout(5000);
 
-  await page.screenshot({ path: 'screenshots/step21-vat-invalid.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step21-vat-invalid.png', fullPage: true, timeout: 5000 });
 
   const bodyText = await page.locator('body').innerText();
   console.log('VAT error shown:', bodyText.toLowerCase().includes('vat') || bodyText.toLowerCase().includes('2.6') || bodyText.toLowerCase().includes('8.1'));
@@ -550,7 +550,7 @@ test('Step 22: Validate Stock rejects value over 99999', async () => {
   await page.getByText('Save', { exact: true }).click();
   await page.waitForTimeout(5000);
 
-  await page.screenshot({ path: 'screenshots/step22-stock-over-limit.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step22-stock-over-limit.png', fullPage: true, timeout: 5000 });
 
   // Restore valid stock
   await editFieldByLabel('Stock quantity', '100');
@@ -570,7 +570,7 @@ test('Step 23: Validate Price rejects zero', async () => {
   await page.getByText('Save', { exact: true }).click();
   await page.waitForTimeout(5000);
 
-  await page.screenshot({ path: 'screenshots/step23-price-zero.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step23-price-zero.png', fullPage: true, timeout: 5000 });
 
   // Restore valid price
   await editFieldByLabel('Selling price', '49.9000');
@@ -589,7 +589,7 @@ test('Step 24: Final save with all valid data', async () => {
   await page.getByText('Save', { exact: true }).click();
   await page.waitForTimeout(10000);
 
-  await page.screenshot({ path: 'screenshots/step24-final-save.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/step24-final-save.png', fullPage: true, timeout: 5000 });
 
   const bodyText = await page.locator('body').innerText();
   console.log('Final save - error:', bodyText.toLowerCase().includes('error'));

@@ -100,7 +100,7 @@ test('Dashboard: should display all 7 sections', async () => {
   await expect(page.getByRole('heading', { name: 'Delivery Rate' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Cancel Rate' })).toBeVisible();
 
-  await page.screenshot({ path: 'screenshots/dashboard-all-sections.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/dashboard-all-sections.png', fullPage: true, timeout: 5000 });
   console.log('ALL 7 SECTIONS TEST PASSED');
 });
 
@@ -111,7 +111,7 @@ test('Dashboard: should display all 7 sections', async () => {
 test('Dashboard: Products section should show product counts and stages', async () => {
   test.setTimeout(60000);
 
-  await page.screenshot({ path: 'screenshots/dashboard-products-section.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/dashboard-products-section.png', fullPage: true, timeout: 5000 });
 
   const bodyText = await page.locator('body').innerText();
 
@@ -139,7 +139,7 @@ test('Dashboard: Orders section should show order counts', async () => {
   const bodyText = await page.locator('body').innerText();
   console.log('Contains "Orders":', bodyText.includes('Orders'));
 
-  await page.screenshot({ path: 'screenshots/dashboard-orders-section.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/dashboard-orders-section.png', fullPage: true, timeout: 5000 });
   console.log('ORDERS SECTION TEST PASSED');
 });
 
@@ -155,7 +155,7 @@ test('Dashboard: Delivery Rate KPI section should be visible', async () => {
   const bodyText = await page.locator('body').innerText();
   console.log('Contains "Delivery Rate":', bodyText.includes('Delivery Rate'));
 
-  await page.screenshot({ path: 'screenshots/dashboard-delivery-rate.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/dashboard-delivery-rate.png', fullPage: true, timeout: 5000 });
   console.log('DELIVERY RATE SECTION TEST PASSED');
 });
 
@@ -171,7 +171,7 @@ test('Dashboard: Cancel Rate KPI section should be visible', async () => {
   const bodyText = await page.locator('body').innerText();
   console.log('Contains "Cancel Rate":', bodyText.includes('Cancel Rate'));
 
-  await page.screenshot({ path: 'screenshots/dashboard-cancel-rate.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/dashboard-cancel-rate.png', fullPage: true, timeout: 5000 });
   console.log('CANCEL RATE SECTION TEST PASSED');
 });
 
@@ -192,7 +192,7 @@ test('Dashboard: Import section should show recent imports', async () => {
   const hasDate = /\d{2}[./]\d{2}[./]\d{4}|\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}/.test(bodyText);
   console.log('Contains dates:', hasDate);
 
-  await page.screenshot({ path: 'screenshots/dashboard-import-section.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/dashboard-import-section.png', fullPage: true, timeout: 5000 });
   console.log('IMPORT SECTION TEST PASSED');
 });
 
@@ -208,7 +208,7 @@ test('Dashboard: Export Galaxus section should show latest exports', async () =>
   console.log('Contains "Export":', bodyText.includes('Export'));
   console.log('Contains "Galaxus":', bodyText.includes('Galaxus'));
 
-  await page.screenshot({ path: 'screenshots/dashboard-export-galaxus.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/dashboard-export-galaxus.png', fullPage: true, timeout: 5000 });
   console.log('EXPORT GALAXUS SECTION TEST PASSED');
 });
 
@@ -231,7 +231,7 @@ test('Dashboard: Scheduler section should show planned exports', async () => {
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(2000);
 
-  await page.screenshot({ path: 'screenshots/dashboard-scheduler.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/dashboard-scheduler.png', fullPage: true, timeout: 5000 });
   console.log('SCHEDULER SECTION TEST PASSED');
 });
 
@@ -245,7 +245,7 @@ test('Dashboard: should capture full dashboard content', async () => {
   // Scroll to top
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(2000);
-  await page.screenshot({ path: 'screenshots/dashboard-full-top.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/dashboard-full-top.png', fullPage: true, timeout: 5000 });
 
   // Print all visible headings
   const headings = await page.locator('h1, h2, h3, h4, h5, h6, [class*="heading"], [class*="title"]').allTextContents();
@@ -396,6 +396,6 @@ test('Product: should click on a product row', async () => {
   await firstRow.click();
   await page.waitForTimeout(10000);
 
-  await page.screenshot({ path: 'screenshots/product-row-clicked.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/product-row-clicked.png', fullPage: true, timeout: 5000 });
   console.log('PRODUCT ROW CLICK TEST PASSED');
 });

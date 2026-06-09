@@ -112,7 +112,7 @@ test('Edit: should double-click a product to open edit form', async () => {
 await expect(page.locator('lb-view-panel').getByText('Product Details')).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Save', { exact: true })).toBeVisible();
 
-  await page.screenshot({ path: 'screenshots/edit-form-opened.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/edit-form-opened.png', fullPage: true, timeout: 5000 });
 
   console.log('EDIT FORM OPENED');
 });
@@ -184,7 +184,7 @@ test('Edit: should edit the Brand field', async () => {
   console.log('Brand field edited:', brandFieldEdited);
 
   await page.waitForTimeout(2000);
-  await page.screenshot({ path: 'screenshots/edit-brand-updated.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/edit-brand-updated.png', fullPage: true, timeout: 5000 });
 
   console.log('BRAND FIELD EDITED');
 });
@@ -219,7 +219,7 @@ test('Edit: should edit the Weight field', async () => {
   console.log('Weight field edited:', weightEdited);
 
   await page.waitForTimeout(2000);
-  await page.screenshot({ path: 'screenshots/edit-weight-updated.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/edit-weight-updated.png', fullPage: true, timeout: 5000 });
 
   console.log('WEIGHT FIELD EDITED');
 });
@@ -235,7 +235,7 @@ test('Edit: should navigate to Price & stock tab', async () => {
   await page.getByText('Price & stock', { exact: true }).click();
   await page.waitForTimeout(5000);
 
-  await page.screenshot({ path: 'screenshots/edit-price-stock-tab.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/edit-price-stock-tab.png', fullPage: true, timeout: 5000 });
 
   // Print all visible fields on this tab
   const labels = await page.evaluate(() => {
@@ -261,13 +261,13 @@ test('Edit: should save the changes', async () => {
   await page.waitForTimeout(3000);
 
   // Take screenshot before saving
-  await page.screenshot({ path: 'screenshots/edit-before-save.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/edit-before-save.png', fullPage: true, timeout: 5000 });
 
   // Click Save button
   await page.getByText('Save', { exact: true }).click();
   await page.waitForTimeout(10000);
 
-  await page.screenshot({ path: 'screenshots/edit-after-save.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/edit-after-save.png', fullPage: true, timeout: 5000 });
 
   // Check for any success/error message
   const bodyText = await page.locator('body').innerText();

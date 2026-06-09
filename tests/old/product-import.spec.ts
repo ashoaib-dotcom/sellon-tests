@@ -131,7 +131,7 @@ test('Import Step 1: Count products before import', async () => {
   const rowCount = await page.locator('tbody tr').count();
   console.log('Visible rows BEFORE import:', rowCount);
 
-  await page.screenshot({ path: 'screenshots/import-1-before.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/import-1-before.png', fullPage: true, timeout: 5000 });
   console.log('STEP 1 PASSED');
 });
 
@@ -145,7 +145,7 @@ test('Import Step 2: Click Import button to open dialog', async () => {
   await page.getByText('Import', { exact: true }).click();
   await page.waitForTimeout(10000);
 
-  await page.screenshot({ path: 'screenshots/import-2-dialog-opened.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/import-2-dialog-opened.png', fullPage: true, timeout: 5000 });
 
   const buttons = await page.getByRole('button').allTextContents();
   console.log('DIALOG BUTTONS:', buttons);
@@ -160,7 +160,7 @@ test('Import Step 2: Click Import button to open dialog', async () => {
 test('Import Step 3: Try to run import without selecting a file', async () => {
   test.setTimeout(120000);
 
-  await page.screenshot({ path: 'screenshots/import-3-no-file-before.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/import-3-no-file-before.png', fullPage: true, timeout: 5000 });
 
   const possibleButtons = ['Run', 'Start', 'Execute', 'Import', 'OK', 'Confirm', 'Submit', 'Upload'];
 
@@ -176,7 +176,7 @@ test('Import Step 3: Try to run import without selecting a file', async () => {
     } catch {}
   }
 
-  await page.screenshot({ path: 'screenshots/import-3-no-file-error.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/import-3-no-file-error.png', fullPage: true, timeout: 5000 });
 
   const bodyText = await page.locator('body').innerText();
   console.log('NO FILE ERROR (first 1500):', bodyText.substring(0, 1500));
@@ -211,7 +211,7 @@ test('Import Step 4: Close error and reopen import dialog', async () => {
     }
   } catch {}
 
-  await page.screenshot({ path: 'screenshots/import-4-error-closed.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/import-4-error-closed.png', fullPage: true, timeout: 5000 });
 
   const fileInputCount = await page.locator('input[type="file"]').count();
   console.log('File inputs still visible:', fileInputCount);
@@ -229,7 +229,7 @@ test('Import Step 4: Close error and reopen import dialog', async () => {
     }
   }
 
-  await page.screenshot({ path: 'screenshots/import-4-dialog-ready.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/import-4-dialog-ready.png', fullPage: true, timeout: 5000 });
   console.log('STEP 4 PASSED');
 });
 
@@ -263,7 +263,7 @@ test('Import Step 5: Upload valid CSV file', async () => {
   }
 
   await page.waitForTimeout(5000);
-  await page.screenshot({ path: 'screenshots/import-5-file-uploaded.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/import-5-file-uploaded.png', fullPage: true, timeout: 5000 });
 
   console.log('STEP 5 PASSED');
 });
@@ -289,7 +289,7 @@ test('Import Step 6: Run the import with file selected', async () => {
     } catch {}
   }
 
-  await page.screenshot({ path: 'screenshots/import-6-import-started.png', fullPage: true });
+  await page.screenshot({ path: 'screenshots/import-6-import-started.png', fullPage: true, timeout: 5000 });
   console.log('STEP 6 PASSED');
 });
 

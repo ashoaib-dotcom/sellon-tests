@@ -64,7 +64,7 @@ test.describe('Login Functionality', () => {
     await page.waitForTimeout(60000);
 
     // Take screenshot to verify
-    await page.screenshot({ path: 'screenshots/dashboard.png', fullPage: true });
+    await page.screenshot({ path: 'screenshots/dashboard.png', fullPage: true, timeout: 5000 });
     console.log('URL after login:', page.url());
 
     // Assert: URL should have changed from login page
@@ -88,7 +88,7 @@ test.describe('Login Functionality', () => {
 
     // Wait for error to appear
     await page.waitForTimeout(5000);
-    await page.screenshot({ path: 'screenshots/invalid-password.png', fullPage: true });
+    await page.screenshot({ path: 'screenshots/invalid-password.png', fullPage: true, timeout: 5000 });
 
     // Assert: Should still be on login page
     await expect(page.getByRole('button', { name: 'Login' })).toBeVisible();
@@ -108,7 +108,7 @@ test.describe('Login Functionality', () => {
 
     // Wait for error to appear
     await page.waitForTimeout(5000);
-    await page.screenshot({ path: 'screenshots/invalid-username.png', fullPage: true });
+    await page.screenshot({ path: 'screenshots/invalid-username.png', fullPage: true, timeout: 5000 });
 
     // Assert: Should still be on login page
     await expect(page.getByRole('button', { name: 'Login' })).toBeVisible();
