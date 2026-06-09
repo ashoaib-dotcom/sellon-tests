@@ -1,5 +1,4 @@
 import { chromium } from '@playwright/test';
-import * as path from 'path';
 
 async function globalSetup() {
   console.log('🚀 Starting global setup...');
@@ -23,75 +22,122 @@ async function globalSetup() {
 
   try {
     const baseURL = process.env.BASE_URL || 'https://stage.sellon.ch/';
-    console.log(`📍 Navigating to: ${baseURL}`);
 
-    await page.goto(baseURL, { 
-      waitUntil: 'networkidle',
-      timeout: 60000 
+    console.log(`📍 Navigating to: ${baseURL}`);
+    await page.goto(baseURL, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
     });
 
-    console.log('📸 Screenshot: login page');
+    await page.waitForTimeout(3000);
+
+    // Screenshot of login page
     await page.screenshot({ path: 'login-page.png', fullPage: true });
+    console.log('📸 Login page screenshot saved');
+    console.log('Page title:', await page.title());
+    console.log('Page URL:', page.url());
 
-    // Log all input fields found
-    const inputs = await page.locator('input').all();
-    console.log(`Found ${inputs.length} input fields`);
+    // Log all inputs found on page
+    const allInputs = page.locator('input');
+    const inputCount = await allInputs.count();
+    console.log(`Found ${inputCount} input fields`);
 
-    for (let i = 0; i < inputs.length; i++) {
-      const type = await inputs[i].getAttribute('type');
-      const name = await inputs[i].getAttribute('name');
-      const id = await inputs[i].getAttribute('id');
-      const placeholder = await inputs[i].getAttribute('placeholder');
-      console.log(`Input ${i}: type=${type}, name=${name}, id=${id}, placeholder=${placeholder}`);
+    for (let i = 0; i < inputCount; i++) {
+      const input = allInputs.nth(i);
+      const type = await input.getAttribute('type');
+      const name = await input.getAttribute('name');
+      const id = await input.getAttribute('id');
+      const placeholder = await input.getAttribute('placeholder');
+      console.log(`  Input[${i}]: type="${type}" name="${name}" id="${id}" placeholder="${placeholder}"`);
+    }
+
+    // Log all buttons found on page
+    const allButtons = page.locator('button');
+    const btnCount = await allButtons.count();
+    console.log(`Found ${btnCount} buttons`);
+
+    for (let i = 0; i < btnCount; i++) {
+      const btn = allButtons.nth(i);
+      const text = await btn.innerText().catch(() => '');
+      const type = await btn.getAttribute('type');
+      console.log(`  Button[${i}]: type="${type}" text="${text}"`);
     }
 
     // Fill username
-    const username = process.env.TEST_USERNAME || '';
-    const password = process.env.TEST_PASSWORD || '';
-
     console.log('📝 Filling username...');
-    await page.locator('input').first().fill(username);
+    try {
+      await page.locator('input[type="text"]').first().fill(
+        process.env.TEST_USERNAME || '', { timeout: 5000 }
+      );
+      console.log('✅ Username filled via input[type="text"]');
+    } catch {
+      try {
+        await page.locator('input[name="username"]').fill(
+          process.env.TEST_USERNAME || '', { timeout: 5000 }
+        );
+        console.log('✅ Username filled via input[name="username"]');
+      } catch {
+        await page.locator('input').first().fill(
+          process.env.TEST_USERNAME || '', { timeout: 5000 }
+        );
+        console.log('✅ Username filled via first input');
+      }
+    }
 
+    // Fill password
     console.log('📝 Filling password...');
-    await page.locator('input[type="password"]').first().fill(password);
+    try {
+      await page.locator('input[type="password"]').first().fill(
+        process.env.TEST_PASSWORD || '', { timeout: 5000 }
+      );
+      console.log('✅ Password filled');
+    } catch (e) {
+      console.error('❌ Could not fill password:', e);
+    }
 
-    console.log('📸 Screenshot: before click');
+    // Screenshot before clicking login
     await page.screenshot({ path: 'before-login.png', fullPage: true });
+    console.log('📸 Before login screenshot saved');
 
     // Click login button
     console.log('🖱️ Clicking login button...');
-    const buttons = await page.locator('button').all();
-    console.log(`Found ${buttons.length} buttons`);
-
-    for (let i = 0; i < buttons.length; i++) {
-      const text = await buttons[i].innerText();
-      console.log(`Button ${i}: "${text}"`);
+    try {
+      await page.locator('button[type="submit"]').click({ timeout: 5000 });
+      console.log('✅ Clicked submit button');
+    } catch {
+      try {
+        await page.locator('button').first().click({ timeout: 5000 });
+        console.log('✅ Clicked first button');
+      } catch (e) {
+        console.error('❌ Could not click button:', e);
+      }
     }
 
-    // Click first button or submit
-    await page.locator('button').first().click();
-
-    // Wait for navigation
-    console.log('⏳ Waiting for navigation...');
+    // Wait for login to complete
+    console.log('⏳ Waiting for login to complete...');
     await page.waitForTimeout(5000);
-    await page.waitForLoadState('networkidle', { timeout: 60000 });
+    await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
 
-    console.log('📸 Screenshot: after login');
+    // Screenshot after login
     await page.screenshot({ path: 'after-login.png', fullPage: true });
-
-    console.log('Current URL:', page.url());
+    console.log('📸 After login screenshot saved');
+    console.log('URL after login:', page.url());
+    console.log('Title after login:', await page.title());
 
     // Save auth state
-    console.log('💾 Saving auth state...');
+    console.log('💾 Saving auth-state.json...');
     await context.storageState({ path: 'auth-state.json' });
-    console.log('✅ Auth state saved successfully!');
+    console.log('✅ auth-state.json saved successfully!');
 
   } catch (error) {
-    console.error('❌ Global setup failed:', error);
-    await page.screenshot({ path: 'error-screenshot.png', fullPage: true });
+    console.error('❌ Global setup error:', error);
+    await page.screenshot({ path: 'error-screenshot.png', fullPage: true }).catch(() => {});
+    // Save state even on error so other tests can still try
+    await context.storageState({ path: 'auth-state.json' }).catch(() => {});
     throw error;
   } finally {
     await browser.close();
+    console.log('🏁 Browser closed');
   }
 }
 
