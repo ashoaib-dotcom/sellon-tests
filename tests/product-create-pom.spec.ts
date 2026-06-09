@@ -65,7 +65,7 @@ test('Step 1: Click New to create product', async () => {
   console.log('Products before:', pagination);
   await productListPage.clickNew();
   await productForm.expectFormVisible();
-  await page.screenshot({ path: 'screenshots/pom-create-1-new.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-create-1-new.png', fullPage: true }); } catch {}
   console.log('STEP 1 PASSED');
 });
 
@@ -108,7 +108,7 @@ test('Step 2b: Save empty product — verify expected errors and warnings appear
   console.log('Warnings — Brand:', hasBrandWarning, '| Category:', hasCategoryWarning, '| Title:', hasTitleWarning, '| Media:', hasMediaWarning);
   console.log('Any validation message present:', hasAnyError);
 
-  await page.screenshot({ path: 'screenshots/pom-create-2b-empty-save.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-create-2b-empty-save.png', fullPage: true }); } catch {}
   console.log('STEP 2b PASSED — empty product validation messages verified');
 });
 
@@ -149,7 +149,7 @@ test('Step 8: Fill Weight and select Category', async () => {
   test.setTimeout(60000);
   await productForm.fillField('Weight', '275.0000');
   await productForm.selectFirstCategory();
-  await page.screenshot({ path: 'screenshots/pom-create-8-master-done.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-create-8-master-done.png', fullPage: true }); } catch {}
   console.log('STEP 8 PASSED');
 });
 
@@ -177,7 +177,7 @@ test('Step 11: Fill VAT', async () => {
 test('Step 12: Fill Stock quantity', async () => {
   test.setTimeout(60000);
   await productForm.fillField('Stock quantity', '200');
-  await page.screenshot({ path: 'screenshots/pom-create-12-price-done.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-create-12-price-done.png', fullPage: true }); } catch {}
   console.log('STEP 12 PASSED');
 });
 
@@ -191,7 +191,7 @@ test('Step 13: Save the product', async () => {
   test.setTimeout(120000);
   await productForm.clickSave();
   await productForm.expectBodyContains(TEST_SKU);
-  await page.screenshot({ path: 'screenshots/pom-create-13-saved.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-create-13-saved.png', fullPage: true }); } catch {}
   console.log('STEP 13 PASSED');
 });
 
@@ -215,7 +215,7 @@ test('Step 15: GTIN invalid checksum rejected', async () => {
   await productForm.fillField('GTIN', invalidGtin);
   await productForm.clickSave();
   await productForm.expectHasError();
-  await page.screenshot({ path: 'screenshots/pom-create-15-gtin-invalid.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-create-15-gtin-invalid.png', fullPage: true }); } catch {}
   await productForm.fillField('GTIN', TEST_GTIN);
   console.log('STEP 15 PASSED');
 });
@@ -225,7 +225,7 @@ test('Step 16: Empty provider key rejected', async () => {
   await productForm.fillField('Provider key', '');
   await productForm.clickSave();
   await productForm.expectHasError();
-  await page.screenshot({ path: 'screenshots/pom-create-16-provider-empty.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-create-16-provider-empty.png', fullPage: true }); } catch {}
   await productForm.fillField('Provider key', TEST_SKU);
   console.log('STEP 16 PASSED');
 });
@@ -236,7 +236,7 @@ test('Step 17: Invalid VAT rejected', async () => {
   await productForm.fillField('VAT', '5.00');
   await productForm.clickSave();
   await productForm.expectHasError();
-  await page.screenshot({ path: 'screenshots/pom-create-17-vat-invalid.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-create-17-vat-invalid.png', fullPage: true }); } catch {}
   await productForm.fillField('VAT', '8.10');
   console.log('STEP 17 PASSED');
 });
@@ -246,7 +246,7 @@ test('Step 18: Stock over 99999 rejected', async () => {
   await productForm.fillField('Stock quantity', '100000');
   await productForm.clickSave();
   await productForm.expectHasError();
-  await page.screenshot({ path: 'screenshots/pom-create-18-stock-over.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-create-18-stock-over.png', fullPage: true }); } catch {}
   await productForm.fillField('Stock quantity', '200');
   console.log('STEP 18 PASSED');
 });
@@ -256,7 +256,7 @@ test('Step 19: Zero price rejected', async () => {
   await productForm.fillField('Selling price', '0');
   await productForm.clickSave();
   await productForm.expectHasError();
-  await page.screenshot({ path: 'screenshots/pom-create-19-price-zero.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-create-19-price-zero.png', fullPage: true }); } catch {}
   await productForm.fillField('Selling price', '59.9000');
   console.log('STEP 19 PASSED');
 });
@@ -265,6 +265,6 @@ test('Step 20: Final save with all valid data', async () => {
   test.setTimeout(120000);
   await productForm.clickSave();
   await productForm.expectBodyContains(TEST_SKU);
-  await page.screenshot({ path: 'screenshots/pom-create-20-final.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-create-20-final.png', fullPage: true }); } catch {}
   console.log('STEP 20 PASSED');
 });

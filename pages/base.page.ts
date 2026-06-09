@@ -4,7 +4,11 @@ export class BasePage {
   constructor(protected page: Page) {}
 
   async screenshot(name: string) {
-    await this.page.screenshot({ path: `screenshots/${name}.png`, fullPage: true });
+    try {
+      await this.page.screenshot({ path: `screenshots/${name}.png`, fullPage: true, timeout: 10000 });
+    } catch {
+      // screenshot failure must not abort the test
+    }
   }
 
   async getBodyText() {

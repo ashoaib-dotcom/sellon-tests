@@ -3,6 +3,28 @@ import { Page } from '@playwright/test';
 export class NavigationPage {
   constructor(private page: Page) {}
 
+  async navigateToDashboard() {
+    try {
+      const modal = this.page.locator('lb-modal.blocking');
+      if (await modal.isVisible()) {
+        await this.page.keyboard.press('Escape');
+        await this.page.waitForTimeout(2000);
+      }
+    } catch {}
+
+    // Open sidebar
+    await this.page.locator('.menu-icon').click();
+    await this.page.waitForTimeout(2000);
+
+    // Click the top-level Dashboard menu item
+    await this.page.locator('nav').getByText('Dashboard', { exact: true }).first().click();
+    await this.page.waitForTimeout(5000);
+
+    // Close sidebar
+    await this.page.keyboard.press('Escape');
+    await this.page.waitForTimeout(1000);
+  }
+
   async navigateToProducts() {
     // Dismiss any blocking modal (same as orders navigation)
     try {

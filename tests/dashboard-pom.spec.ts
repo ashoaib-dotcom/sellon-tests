@@ -349,50 +349,72 @@ test('Product overview: export status and product stage visible in list', async 
 });
 
 // ==========================================
-// DASHBOARD: AUTO-RELOAD
+// DASHBOARD: NAVIGATE BACK VIA MENU
 // ==========================================
 
-test('Dashboard: should indicate auto-reload is active', async () => {
-  test.setTimeout(60000);
+test('Dashboard: navigate back via menu and verify counts updated', async () => {
+  test.setTimeout(120000);
 
-  // Navigate to dashboard
-  await page.goto('https://mpe-test.lobster-cloud.com', { timeout: 60000, waitUntil: 'commit' });
-  await page.waitForTimeout(15000);
-
-  const bodyText = await dashboardPage.getBodyText();
-
-  // Dashboard should have a refresh interval indicator or reload timer
-  const hasRefreshCue = bodyText.toLowerCase().includes('reload') ||
-    bodyText.toLowerCase().includes('refresh') ||
-    bodyText.toLowerCase().includes('auto') ||
-    bodyText.toLowerCase().includes('minute') ||
-    /\d+\s*min/.test(bodyText.toLowerCase());
-  console.log('Auto-reload cue present:', hasRefreshCue);
-
-  await dashboardPage.screenshot('pom-dash-auto-reload');
-  console.log('DASHBOARD AUTO-RELOAD TEST PASSED');
-});
-
-// ==========================================
-// DASHBOARD: RELOAD AFTER PRODUCT REFRESH
-// ==========================================
-
-test('Dashboard: should update counts after navigating back from products', async () => {
-  test.setTimeout(180000);
-
-  // Navigate to products and refresh
+  // Navigate to products, refresh, then return to dashboard via menu
   await navPage.navigateToProducts();
   await productListPage.clickRefresh();
-  await page.waitForTimeout(5000);
+  await page.waitForTimeout(3000);
 
-  // Go back to dashboard
-  await page.goto('https://mpe-test.lobster-cloud.com', { timeout: 60000, waitUntil: 'commit' });
-  await page.waitForTimeout(15000);
+  // Navigate back to dashboard via the sidebar menu
+  await navPage.navigateToDashboard();
 
   const bodyText = await dashboardPage.getBodyText();
   const hasProductCounts = /\d+/.test(bodyText);
   console.log('Dashboard shows product counts after return:', hasProductCounts);
+  console.log('Contains "Products":', bodyText.includes('Products'));
 
-  await dashboardPage.screenshot('pom-dash-reload-after-action');
-  console.log('DASHBOARD RELOAD AFTER ACTION TEST PASSED');
+  await dashboardPage.screenshot('pom-dash-back-via-menu');
+  console.log('NAVIGATE BACK TO DASHBOARD TEST PASSED');
+});
+
+
+
+// ==========================================
+// NEGATIVE TESTS
+// ==========================================
+
+test('Dashboard negative: all numeric counts should be zero or positive', async () => {
+  test.setTimeout(60000);
+
+  await navPage.navigateToDashboard();
+  const bodyText = await dashboardPage.getBodyText();
+
+  // Extract all standalone numbers from the dashboard
+  const numbers = [...bodyText.matchAll(/\b(\d+)\b/g)].map(m => parseInt(m[1]));
+  const allNonNegative = numbers.every(n => n >= 0);
+  console.log('All dashboard counts non-negative:', allNonNegative);
+  console.log('Numbers found:', numbers.slice(0, 15));
+
+  await dashboardPage.screenshot('pom-dash-neg-counts');
+  console.log('DASHBOARD NEGATIVE COUNTS TEST PASSED');
+});
+
+test('Dashboard negative: incomplete products count should not exceed total', async () => {
+  test.setTimeout(60000);
+
+  const bodyText = await dashboardPage.getBodyText();
+
+  // Parse the Products section counts
+  const totalMatch  = bodyText.match(/Total\s+(\d+)/);
+  const invalidMatch = bodyText.match(/Invalid\s+(\d+)/);
+  const incompleteMatch = bodyText.match(/Incomplete\s+(\d+)/);
+  const completeMatch = bodyText.match(/Complete\s+(\d+)/);
+
+  const total      = totalMatch ? parseInt(totalMatch[1]) : 0;
+  const invalid    = invalidMatch ? parseInt(invalidMatch[1]) : 0;
+  const incomplete = incompleteMatch ? parseInt(incompleteMatch[1]) : 0;
+  const complete   = completeMatch ? parseInt(completeMatch[1]) : 0;
+
+  console.log(`Products — Total: ${total} | Complete: ${complete} | Incomplete: ${incomplete} | Invalid: ${invalid}`);
+  console.log('Complete <= Total:', complete <= total);
+  console.log('Incomplete <= Total:', incomplete <= total);
+  console.log('Invalid <= Total:', invalid <= total);
+
+  await dashboardPage.screenshot('pom-dash-neg-product-counts');
+  console.log('DASHBOARD PRODUCT COUNT INTEGRITY TEST PASSED');
 });

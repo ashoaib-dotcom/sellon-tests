@@ -65,7 +65,7 @@ test('Single Delete 1: Delete a Stage 1 product', async () => {
   console.log(`Products after: ${countAfter}`);
   expect(countAfter).toBeLessThan(countBefore);
 
-  await page.screenshot({ path: 'screenshots/del-1-stage1.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/del-1-stage1.png', fullPage: true }); } catch {}
   console.log('SINGLE DELETE 1 PASSED — Stage 1 product deleted');
 });
 
@@ -90,7 +90,7 @@ test('Single Delete 2: Delete a Stage 2 product', async () => {
   console.log(`Products after: ${countAfter}`);
   expect(countAfter).toBeLessThan(countBefore);
 
-  await page.screenshot({ path: 'screenshots/del-2-stage2.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/del-2-stage2.png', fullPage: true }); } catch {}
   console.log('SINGLE DELETE 2 PASSED — Stage 2 product deleted');
 });
 
@@ -115,7 +115,7 @@ test('Single Delete 3: Delete a product with Error status', async () => {
   console.log(`Products after: ${countAfter}`);
   expect(countAfter).toBeLessThan(countBefore);
 
-  await page.screenshot({ path: 'screenshots/del-3-error.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/del-3-error.png', fullPage: true }); } catch {}
   console.log('SINGLE DELETE 3 PASSED — Error product deleted');
 });
 
@@ -139,7 +139,7 @@ test('Single Delete 4: Cancel deletion — product should remain', async () => {
   console.log(`Products before: ${countBefore}, after cancel: ${countAfter}`);
   expect(countAfter).toBe(countBefore);
 
-  await page.screenshot({ path: 'screenshots/del-4-cancel.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/del-4-cancel.png', fullPage: true }); } catch {}
   console.log('SINGLE DELETE 4 PASSED — Product remains after cancel');
 });
 
@@ -176,7 +176,7 @@ test('Bulk Delete 1: Select all products and delete', async () => {
   console.log(`Products after select-all delete: ${countAfter}`);
   expect(countAfter).toBeLessThan(countBefore);
 
-  await page.screenshot({ path: 'screenshots/del-5-select-all.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/del-5-select-all.png', fullPage: true }); } catch {}
   console.log('BULK DELETE 1 PASSED — Select-all delete complete');
 });
 
@@ -208,7 +208,7 @@ test('Bulk Delete 2: Select 3 specific products and delete', async () => {
   console.log(`Products after 3-product bulk delete: ${countAfter}`);
   expect(countAfter).toBeLessThan(countBefore);
 
-  await page.screenshot({ path: 'screenshots/del-6-bulk3.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/del-6-bulk3.png', fullPage: true }); } catch {}
   console.log('BULK DELETE 2 PASSED — 3 products deleted');
 });
 
@@ -238,7 +238,7 @@ test('Bulk Delete 3: Select multiple products and cancel — products remain', a
   console.log(`Before: ${countBefore}, after cancel: ${countAfter}`);
   expect(countAfter).toBe(countBefore);
 
-  await page.screenshot({ path: 'screenshots/del-7-bulk-cancel.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/del-7-bulk-cancel.png', fullPage: true }); } catch {}
   console.log('BULK DELETE 3 PASSED — Products remain after cancel');
 });
 
@@ -270,7 +270,7 @@ test('Edge Case 1: Delete without selecting any product', async () => {
     await productListPage.dismissDialog();
   }
 
-  await page.screenshot({ path: 'screenshots/del-edge1-no-selection.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/del-edge1-no-selection.png', fullPage: true }); } catch {}
   console.log('EDGE CASE 1 PASSED — No-selection delete handled');
 });
 
@@ -299,7 +299,7 @@ test('Edge Case 2: Product count decreases by correct amount after delete', asyn
   // Should decrease by exactly 1
   expect(countBefore - countAfter).toBe(1);
 
-  await page.screenshot({ path: 'screenshots/del-edge2-count.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/del-edge2-count.png', fullPage: true }); } catch {}
   console.log('EDGE CASE 2 PASSED — Count decreased by exactly 1');
 });
 
@@ -332,7 +332,7 @@ test('Edge Case 3: Deleted product does not appear in the list', async () => {
     expect(notInList).toBe(true);
   }
 
-  await page.screenshot({ path: 'screenshots/del-edge3-not-in-list.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/del-edge3-not-in-list.png', fullPage: true }); } catch {}
   console.log('EDGE CASE 3 PASSED — Deleted product not found in list');
 });
 
@@ -354,6 +354,6 @@ test('Final: Verify product list after all deletions', async () => {
     console.log('Product list may be empty — that is a valid end state');
   }
 
-  await page.screenshot({ path: 'screenshots/del-final-list.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/del-final-list.png', fullPage: true }); } catch {}
   console.log('FINAL PASSED — Product list verified after all delete operations');
 });

@@ -47,7 +47,7 @@ test('Edit: should double-click a product to open edit form', async () => {
   await productListPage.expectTableVisible();
   await productListPage.doubleClickFirstProduct();
   await productForm.expectFormVisible();
-  await page.screenshot({ path: 'screenshots/pom-edit-form-opened.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-edit-form-opened.png', fullPage: true }); } catch {}
   console.log('EDIT FORM OPENED');
 });
 
@@ -66,14 +66,14 @@ test('Edit: should verify Master data tab fields', async () => {
 test('Edit: should edit Brand field', async () => {
   test.setTimeout(120000);
   await productForm.fillField('Brand', 'PowerCell Updated');
-  await page.screenshot({ path: 'screenshots/pom-edit-brand.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-edit-brand.png', fullPage: true }); } catch {}
   console.log('BRAND EDITED');
 });
 
 test('Edit: should edit Weight field', async () => {
   test.setTimeout(120000);
   await productForm.fillField('Weight', '95.0000');
-  await page.screenshot({ path: 'screenshots/pom-edit-weight.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-edit-weight.png', fullPage: true }); } catch {}
   console.log('WEIGHT EDITED');
 });
 
@@ -82,7 +82,7 @@ test('Edit: should navigate to Price & stock tab', async () => {
   await productForm.clickTab('Price & stock');
   await expect(page.getByText('Selling price', { exact: true })).toBeVisible({ timeout: 10000 });
   await expect(page.getByText('VAT', { exact: true })).toBeVisible();
-  await page.screenshot({ path: 'screenshots/pom-edit-price-tab.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-edit-price-tab.png', fullPage: true }); } catch {}
   console.log('PRICE & STOCK TAB OPENED');
 });
 
@@ -90,6 +90,71 @@ test('Edit: should save the changes', async () => {
   test.setTimeout(120000);
   await productForm.clickTab('Master data');
   await productForm.clickSave();
-  await page.screenshot({ path: 'screenshots/pom-edit-saved.png', fullPage: true });
+  try { await page.screenshot({ path: 'screenshots/pom-edit-saved.png', fullPage: true }); } catch {}
   console.log('SAVE COMPLETE');
+});
+// ==========================================
+// NEGATIVE TESTS
+// ==========================================
+
+test('Edit negative: invalid GTIN checksum should be rejected on save', async () => {
+  test.setTimeout(120000);
+
+  await productForm.clickTab('Master data');
+
+  // Read current GTIN and corrupt the check digit
+  const gtinInput = page.getByLabel('GTIN', { exact: false }).first();
+  const currentGtin = await gtinInput.inputValue().catch(() => '');
+  const badGtin = currentGtin.length > 0
+    ? currentGtin.slice(0, -1) + ((parseInt(currentGtin.slice(-1)) + 1) % 10)
+    : '4006381333932';
+
+  await productForm.fillField('GTIN', badGtin);
+  await productForm.clickSave();
+  await productForm.expectHasError();
+  console.log('Invalid GTIN rejected — error shown');
+
+  // Restore original GTIN
+  if (currentGtin.length > 0) await productForm.fillField('GTIN', currentGtin);
+
+  try { await page.screenshot({ path: 'screenshots/pom-edit-neg-gtin.png', fullPage: true }); } catch {}
+  console.log('EDIT NEG GTIN TEST PASSED');
+});
+
+test('Edit negative: empty provider key should be rejected on save', async () => {
+  test.setTimeout(120000);
+
+  await productForm.clickTab('Master data');
+
+  // Read current provider key then clear it
+  const pkInput = page.getByLabel('Provider key', { exact: false }).first();
+  const currentPk = await pkInput.inputValue().catch(() => '');
+
+  await productForm.fillField('Provider key', '');
+  await productForm.clickSave();
+  await productForm.expectHasError();
+  console.log('Empty provider key rejected — error shown');
+
+  // Restore
+  if (currentPk.length > 0) await productForm.fillField('Provider key', currentPk);
+
+  try { await page.screenshot({ path: 'screenshots/pom-edit-neg-provider-key.png', fullPage: true }); } catch {}
+  console.log('EDIT NEG PROVIDER KEY TEST PASSED');
+});
+
+test('Edit negative: invalid VAT value should be rejected on save', async () => {
+  test.setTimeout(120000);
+
+  await productForm.clickTab('Price & stock');
+
+  await productForm.fillField('VAT', '99.99');
+  await productForm.clickSave();
+  await productForm.expectHasError();
+  console.log('Invalid VAT rejected — error shown');
+
+  // Restore valid VAT
+  await productForm.fillField('VAT', '8.10');
+
+  try { await page.screenshot({ path: 'screenshots/pom-edit-neg-vat.png', fullPage: true }); } catch {}
+  console.log('EDIT NEG VAT TEST PASSED');
 });

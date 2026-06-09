@@ -61,3 +61,51 @@ test('POM Login: empty fields should stay on login page', async () => {
   console.log('POM EMPTY FIELDS TEST PASSED');
   await browser.close();
 });
+// ==========================================
+// NEGATIVE TESTS
+// ==========================================
+
+test('POM Login: SQL injection in username should stay on login page', async () => {
+  test.setTimeout(120000);
+  await setupBrowser();
+
+  await loginPage.goto();
+  await loginPage.fillUsername("' OR '1'='1");
+  await loginPage.fillPassword("' OR '1'='1");
+  await loginPage.clickLogin();
+  await page.waitForTimeout(5000);
+
+  await loginPage.expectLoginFieldsVisible();
+  console.log('POM SQL INJECTION TEST PASSED');
+  await browser.close();
+});
+
+test('POM Login: whitespace-only credentials should stay on login page', async () => {
+  test.setTimeout(120000);
+  await setupBrowser();
+
+  await loginPage.goto();
+  await loginPage.fillUsername('   ');
+  await loginPage.fillPassword('   ');
+  await loginPage.clickLogin();
+  await page.waitForTimeout(5000);
+
+  await loginPage.expectLoginFieldsVisible();
+  console.log('POM WHITESPACE CREDENTIALS TEST PASSED');
+  await browser.close();
+});
+
+test('POM Login: valid username with wrong case password should stay on login page', async () => {
+  test.setTimeout(120000);
+  await setupBrowser();
+
+  await loginPage.goto();
+  await loginPage.fillUsername('ashoaib');
+  await loginPage.fillPassword('TEST2');
+  await loginPage.clickLogin();
+  await page.waitForTimeout(10000);
+
+  await loginPage.expectLoginFieldsVisible();
+  console.log('POM CASE SENSITIVE PASSWORD TEST PASSED');
+  await browser.close();
+});
