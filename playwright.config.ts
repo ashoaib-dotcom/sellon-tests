@@ -7,6 +7,7 @@ export default defineConfig({
     timeout: 30000, // global timeout for all expect() assertions
   },
   use: {
+    baseURL: process.env.BASE_URL || 'https://stage.sellon.ch/',
     headless: true,
     channel: 'chrome',
     viewport: { width: 1920, height: 1080 },
