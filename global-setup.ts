@@ -6,22 +6,17 @@ async function globalSetup(config: FullConfig) {
 
   console.log('🔐 Logging in globally...');
 
-  // Go to login page
-  await page.goto(process.env.BASE_URL || 'https://your-app-url.com');
+  await page.goto(process.env.BASE_URL || 'https://stage.sellon.ch/');
 
-  // Fill login credentials
   await page.fill('input[type="text"]', process.env.TEST_USERNAME || '');
   await page.fill('input[type="password"]', process.env.TEST_PASSWORD || '');
 
-  // Click login button
   await page.click('button[type="submit"]');
 
-  // Wait for dashboard to load
   await page.waitForSelector('.menu-icon', { timeout: 60000 });
 
   console.log('✅ Login successful! Saving session...');
 
-  // Save session/storage state
   await page.context().storageState({ path: 'auth-state.json' });
 
   await browser.close();
