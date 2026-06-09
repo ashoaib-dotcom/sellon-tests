@@ -38,6 +38,130 @@ export class OrdersPage extends BasePage {
   }
 
   async getPaginationText() {
-    return await this.page.locator('text=/\\d+ - \\d+ of \\d+/').innerText();
+    try {
+      return await this.page.locator('text=/\\d+ - \\d+ of \\d+/').innerText({ timeout: 5000 });
+    } catch {
+      return 'N/A';
+    }
+  }
+
+  async getPaginationTotal(): Promise<number> {
+    const text = await this.getPaginationText();
+    const m = text.match(/of (\d+)/);
+    return m ? parseInt(m[1]) : 0;
+  }
+
+  // Returns the filter row cell for a given column index
+  filterCell(colIndex: number) {
+    return this.page.locator('thead tr').nth(1).locator('th, td').nth(colIndex);
+  }
+
+  // Returns all column header titles from the first thead row
+  async getColumnHeaders(): Promise<string[]> {
+    const headers = await this.page.locator('thead tr').first().locator('th, td').allInnerTexts();
+    return headers.map(h => h.trim().replace(/\n.*/, ''));
+  }
+
+  // Find the column index by header title text (case-insensitive partial match)
+  async findColumnIndex(titleText: string): Promise<number> {
+    const headers = await this.getColumnHeaders();
+    const idx = headers.findIndex(h => h.toLowerCase().includes(titleText.toLowerCase()));
+    return idx;
+  }
+
+  // Set a text filter on a specific column
+  async setTextFilter(colIndex: number, value: string) {
+    const cell = this.filterCell(colIndex);
+    const input = cell.locator('input[type="text"], input:not([type])').first();
+    if (await input.count() === 0) {
+      console.log(`  No text input found in filter col ${colIndex}`);
+      return;
+    }
+    await input.clear();
+    await input.fill(value);
+    await this.page.waitForTimeout(400);
+    console.log(`  Text filter col ${colIndex} = "${value}"`);
+  }
+
+  // Open a dropdown filter and pick an option (Lobster lb-combobox)
+  async setDropdownFilter(colIndex: number, optionText: string) {
+    const cell = this.filterCell(colIndex);
+
+    // Native <select>
+    const nativeSelect = cell.locator('select').first();
+    if (await nativeSelect.count() > 0) {
+      try {
+        await nativeSelect.selectOption({ label: optionText });
+        await this.page.waitForTimeout(400);
+        console.log(`  Dropdown col ${colIndex} = "${optionText}" via native select`);
+        return;
+      } catch {}
+    }
+
+    // Lobster lb-combobox — click arrow button only (not the input, to avoid toggle)
+    const combobox = cell.locator('lb-combobox').first();
+    if (await combobox.count() > 0) {
+      const arrowBtn = combobox.locator('button.form-button, button:has(.fa-sort-down)').first();
+      if (await arrowBtn.count() > 0) {
+        await arrowBtn.click();
+      } else {
+        await combobox.click();
+      }
+      await this.page.waitForTimeout(1200);
+    } else {
+      await cell.click();
+      await this.page.waitForTimeout(1000);
+    }
+
+    // Find option in Lobster dropdown
+    const optionSelectors = [
+      `.dropdown-item:has-text("${optionText}")`,
+      `[class*="dropdown-item"]:has-text("${optionText}")`,
+      `.item-label:has-text("${optionText}")`,
+      `[class*="item-label"]:has-text("${optionText}")`,
+      `lb-option:has-text("${optionText}")`,
+      `[role="option"]:has-text("${optionText}")`,
+    ];
+
+    for (const sel of optionSelectors) {
+      const opt = this.page.locator(sel).first();
+      if (await opt.count() > 0) {
+        await opt.scrollIntoViewIfNeeded();
+        await opt.click();
+        await this.page.waitForTimeout(600);
+        console.log(`  Dropdown col ${colIndex} = "${optionText}" via "${sel}"`);
+        return;
+      }
+    }
+    console.log(`  Option "${optionText}" not found for col ${colIndex}`);
+  }
+
+  // Click the Search button to apply filters
+  async clickSearch() {
+    const btn = this.page.getByText('Search', { exact: true });
+    if (await btn.count() > 0) {
+      await btn.click();
+      await this.page.waitForTimeout(4000);
+    } else {
+      // Some order grids filter on-the-fly without a Search button
+      await this.page.waitForTimeout(3000);
+    }
+    console.log('  Search → pagination:', await this.getPaginationText());
+  }
+
+  // Click the Clear button to reset filters
+  async clickClear() {
+    const btn = this.page.getByText('Clear', { exact: true });
+    if (await btn.count() > 0) {
+      await btn.click();
+      await this.page.waitForTimeout(3000);
+    }
+    console.log('  Clear → pagination:', await this.getPaginationText());
+  }
+
+  // Get the cell value from a specific row + column
+  async getCellText(rowIndex: number, colIndex: number): Promise<string> {
+    const cell = this.page.locator('tbody tr').nth(rowIndex).locator('td').nth(colIndex);
+    return (await cell.innerText({ timeout: 5000 }).catch(() => '')).trim();
   }
 }

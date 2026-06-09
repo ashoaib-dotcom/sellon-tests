@@ -15,7 +15,8 @@
     "test:import": "npx playwright test tests/product-import-pom.spec.ts",
     "test:stock": "npx playwright test tests/stock-import-pom.spec.ts",
     "test:export": "npx playwright test tests/export-pom.spec.ts",
-    "test:validations": "npx playwright test tests/product-validations-pom.spec.ts"
+    "test:validations": "npx playwright test tests/product-validations-pom.spec.ts",
+    "test:orders-filters": "npx playwright test tests/orders-filters-pom.spec.ts"
   },
   "keywords": [],
   "author": "",
