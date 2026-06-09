@@ -51,16 +51,20 @@ jobs:
           name: login-screenshots
           path: |
             login-page.png
+            before-login.png
             after-login.png
+            error-screenshot.png
           retention-days: 1
           if-no-files-found: ignore
 
       - name: Upload auth state
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: auth-state
           path: auth-state.json
           retention-days: 1
+          if-no-files-found: ignore
 
   test:
     name: ${{ matrix.test-suite }}
@@ -117,6 +121,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: auth-state
+        continue-on-error: true
 
       - name: Create screenshots directory
         run: mkdir -p screenshots
