@@ -44,6 +44,17 @@ jobs:
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
           BASE_URL: ${{ secrets.BASE_URL }}
 
+      - name: Upload login screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: login-screenshots
+          path: |
+            login-page.png
+            after-login.png
+          retention-days: 1
+          if-no-files-found: ignore
+
       - name: Upload auth state
         uses: actions/upload-artifact@v4
         with:
@@ -142,5 +153,7 @@ jobs:
     steps:
       - name: Check test results
         run: |
+          echo "================================================"
           echo "All test suites completed."
-          echo "Check individual job results above for pass/fail status."
+          echo "Check individual job results above for pass/fail."
+          echo "================================================"
