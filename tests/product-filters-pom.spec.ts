@@ -136,7 +136,7 @@ test.beforeAll(async () => {
   test.setTimeout(600000);
 
   browser = await chromium.launch({
-    headless: false,
+    headless: true,
     channel: 'chrome',
     args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
   });
@@ -152,7 +152,7 @@ test.beforeAll(async () => {
   navPage    = new NavigationPage(page);
   productListPage = new ProductListPage(page);
 
-  await loginPage.login('ashoaib', 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
   await navPage.navigateToProducts();
   await productListPage.expectTableVisible();
 
@@ -186,7 +186,7 @@ test('TC-01: Filter by State "Stage 1" — grid shows only Stage 1 products', as
   console.log('Rows visible:', rowCount, '| Pagination total:', totalAfter);
   console.log('Has Stage 1:', body.includes('Stage 1'), '| Has Stage 2:', body.includes('Stage 2'), '| Has Error:', body.includes('Error'));
 
-  try { await page.screenshot({ path: 'screenshots/tc01-state-stage1-filtered.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc01-state-stage1-filtered.png', timeout: 5000 }); } catch {}
   console.log('TC-01 PASSED');
 });
 
@@ -210,7 +210,7 @@ test('TC-02: Clear button resets all filters and restores full dataset (1-48 of 
   const stateVal = await stateInputOrSelect.inputValue().catch(() => '');
   console.log('State filter value after clear:', stateVal || '(empty)');
 
-  try { await page.screenshot({ path: 'screenshots/tc02-clear-filters.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc02-clear-filters.png', timeout: 5000 }); } catch {}
   console.log('TC-02 PASSED');
 });
 
@@ -237,7 +237,7 @@ test('TC-03: ID filter with a real product ID shows only that product', async ()
   console.log('ID filter:', productId, '→ pagination:', paginationText, '| total:', totalAfter);
   console.log('ID appears in results:', body.includes(productId));
 
-  try { await page.screenshot({ path: 'screenshots/tc03-id-filter-specific.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc03-id-filter-specific.png', timeout: 5000 }); } catch {}
 
   // A unique ID should return exactly 1 product
   console.log('Result count is 1:', totalAfter === 1);
@@ -299,7 +299,7 @@ test.skip('TC-04: Multi-select Category filter — filtered by selected categori
   const rowCount = await getRowCount();
   console.log('Rows after category filter:', rowCount, '| Total:', totalAfter);
 
-  try { await page.screenshot({ path: 'screenshots/tc04-category-multiselect.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc04-category-multiselect.png', timeout: 5000 }); } catch {}
 
   await clickClear();
   console.log('TC-04 PASSED');
@@ -329,7 +329,7 @@ test('TC-05: Partial text "Ant" in titleDE filters to matching or empty results'
   const isZero = totalAfter === 0 || paginationText.includes('0 of 0') || paginationText === 'N/A';
   console.log('Shows empty state (0 results):', isZero);
 
-  try { await page.screenshot({ path: 'screenshots/tc05-titleDE-partial-ant.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc05-titleDE-partial-ant.png', timeout: 5000 }); } catch {}
 
   await clickClear();
   console.log('TC-05 PASSED');
@@ -354,7 +354,7 @@ test('TC-06: Stock quantity filter with value 200 shows matching products', asyn
   console.log('Stock filter "200" → pagination:', paginationText, '| rows:', rowCount);
   console.log('Has "200" in body:', body.includes('200'));
 
-  try { await page.screenshot({ path: 'screenshots/tc06-stock-filter-200.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc06-stock-filter-200.png', timeout: 5000 }); } catch {}
 
   await clickClear();
   console.log('TC-06 PASSED');
@@ -376,7 +376,7 @@ test('TC-07: Filter by State "Stage 2" shows only Stage 2 products', async () =>
   console.log('Stage 2 filter → pagination:', paginationText);
   console.log('Has Stage 1:', body.includes('Stage 1'), '| Has Error:', body.includes('Error'));
 
-  try { await page.screenshot({ path: 'screenshots/tc07-state-stage2.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc07-state-stage2.png', timeout: 5000 }); } catch {}
   await clickClear();
   console.log('TC-07 PASSED');
 });
@@ -397,7 +397,7 @@ test('TC-08: Filter by State "Error" shows only Error products', async () => {
   console.log('Error filter → pagination:', paginationText);
   console.log('Has Error:', body.includes('Error'));
 
-  try { await page.screenshot({ path: 'screenshots/tc08-state-error.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc08-state-error.png', timeout: 5000 }); } catch {}
   await clickClear();
   console.log('TC-08 PASSED');
 });
@@ -418,7 +418,7 @@ test('TC-09: Name filter "SoundBlast" shows only SoundBlast products', async () 
   console.log('Name "SoundBlast" → pagination:', paginationText);
   console.log('Has SoundBlast:', body.includes('SoundBlast'));
 
-  try { await page.screenshot({ path: 'screenshots/tc09-name-soundblast.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc09-name-soundblast.png', timeout: 5000 }); } catch {}
   await clickClear();
   console.log('TC-09 PASSED');
 });
@@ -437,7 +437,7 @@ test('TC-10: Name filter with non-existing value shows 0 results', async () => {
   const totalAfter = await getPaginationTotal();
   console.log('No-match filter → pagination:', paginationText, '| total:', totalAfter);
 
-  try { await page.screenshot({ path: 'screenshots/tc10-name-nomatch.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc10-name-nomatch.png', timeout: 5000 }); } catch {}
   await clickClear();
   console.log('TC-10 PASSED');
 });
@@ -458,7 +458,7 @@ test('TC-11: Provider key filter "BT-SPK" shows only BT-SPK products', async () 
   console.log('Provider key "BT-SPK" → pagination:', paginationText);
   console.log('Has BT-SPK:', body.includes('BT-SPK'));
 
-  try { await page.screenshot({ path: 'screenshots/tc11-provider-btspk.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc11-provider-btspk.png', timeout: 5000 }); } catch {}
   await clickClear();
   console.log('TC-11 PASSED');
 });
@@ -480,7 +480,7 @@ test('TC-12: VAT filter "8.10" shows only 8.10 VAT products', async () => {
   console.log('VAT 8.10 filter → pagination:', paginationText, '| total:', totalAfter);
   console.log('Has 8.10:', body.includes('8.10') || body.includes('8,10'));
 
-  try { await page.screenshot({ path: 'screenshots/tc12-vat-810.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc12-vat-810.png', timeout: 5000 }); } catch {}
   await clickClear();
   console.log('TC-12 PASSED');
 });
@@ -503,7 +503,7 @@ test('TC-13: Combined — State "Stage 2" + Provider key "BT-SPK" narrows result
   const paginationText = await getPaginationText();
   console.log('Combined State+Provider filter → pagination:', paginationText);
 
-  try { await page.screenshot({ path: 'screenshots/tc13-combined-state-provider.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc13-combined-state-provider.png', timeout: 5000 }); } catch {}
   await clickClear();
   console.log('TC-13 PASSED');
 });
@@ -530,7 +530,7 @@ test('TC-14: Horizontal scrolling reveals hidden columns (titleDE, Brand, Owner,
     console.log('Table not found for scroll test');
   }
 
-  try { await page.screenshot({ path: 'screenshots/tc14-horizontal-scroll.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc14-horizontal-scroll.png', timeout: 5000 }); } catch {}
   console.log('TC-14 PASSED');
 });
 
@@ -560,7 +560,7 @@ test('TC-15: Pagination indicator updates accurately after filter is applied', a
   console.log('Pagination changed after filter:', filtered !== unfiltered);
   console.log('Pagination restored after clear:', restored === unfiltered || restored.includes(unfiltered.split(' of ')[1] || ''));
 
-  try { await page.screenshot({ path: 'screenshots/tc15-pagination-accuracy.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc15-pagination-accuracy.png', timeout: 5000 }); } catch {}
   console.log('TC-15 PASSED');
 });
 
@@ -590,7 +590,7 @@ test('TC-16: Price filter "< 12" shows only products with price below 12', async
   const allBelow12 = prices.every(p => p < 12);
   console.log('Sample prices:', prices.slice(0, 5), '| All below 12:', allBelow12);
 
-  try { await page.screenshot({ path: 'screenshots/tc16-price-less-than-12.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc16-price-less-than-12.png', timeout: 5000 }); } catch {}
   await clickClear();
   console.log('TC-16 PASSED');
 });
@@ -621,7 +621,7 @@ test('TC-17: Price filter "> 12" shows only products with price above 12', async
   const allAbove12 = prices.every(p => p > 12);
   console.log('Sample prices:', prices.slice(0, 5), '| All above 12:', allAbove12);
 
-  try { await page.screenshot({ path: 'screenshots/tc17-price-greater-than-12.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc17-price-greater-than-12.png', timeout: 5000 }); } catch {}
   await clickClear();
   console.log('TC-17 PASSED');
 });
@@ -644,7 +644,7 @@ test('TC-18: Special characters in Name filter show 0 results without crashing',
   const pageVisible = await page.locator('body').isVisible();
   console.log('Page still visible (no crash):', pageVisible);
 
-  try { await page.screenshot({ path: 'screenshots/tc18-special-chars.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc18-special-chars.png', timeout: 5000 }); } catch {}
   await clickClear();
   console.log('TC-18 PASSED');
 });
@@ -666,7 +666,7 @@ test('TC-19: Contradictory filters produce 0 results', async () => {
   console.log('Contradictory filters → pagination:', paginationText, '| total:', totalAfter);
   console.log('Correctly shows 0 results:', totalAfter === 0);
 
-  try { await page.screenshot({ path: 'screenshots/tc19-contradictory-filters.png' }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/tc19-contradictory-filters.png', timeout: 5000 }); } catch {}
   await clickClear();
   console.log('TC-19 PASSED');
 });

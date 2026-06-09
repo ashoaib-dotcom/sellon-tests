@@ -15,7 +15,7 @@ test.beforeAll(async () => {
   test.setTimeout(300000);
 
   browser = await chromium.launch({
-    headless: false,
+    headless: true,
     channel: 'chrome',
     args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
   });
@@ -31,7 +31,7 @@ test.beforeAll(async () => {
   navPage = new NavigationPage(page);
   productListPage = new ProductListPage(page);
 
-  await loginPage.login('ashoaib', 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
   console.log('LOGIN COMPLETE');
 });
 

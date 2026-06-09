@@ -7,7 +7,7 @@ let loginPage: LoginPage;
 
 async function setupBrowser() {
   browser = await chromium.launch({
-    headless: false,
+    headless: true,
     channel: 'chrome',
     args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
   });
@@ -25,7 +25,7 @@ test('POM Login: valid credentials should reach dashboard', async () => {
   test.setTimeout(300000);
   await setupBrowser();
 
-  await loginPage.login('ashoaib', 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
   await loginPage.expectLoginFieldsGone();
 
   console.log('POM LOGIN TEST PASSED');

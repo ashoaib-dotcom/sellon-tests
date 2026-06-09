@@ -15,7 +15,7 @@ test.beforeAll(async () => {
   test.setTimeout(300000);
 
   browser = await chromium.launch({
-    headless: false,
+    headless: true,
     channel: 'chrome',
     args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
   });
@@ -31,7 +31,7 @@ test.beforeAll(async () => {
   productListPage = new ProductListPage(page);
   dashboardPage = new DashboardPage(page);
 
-  await loginPage.login('ashoaib', 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
   await navPage.navigateToProducts();
   console.log('SETUP COMPLETE');
 });
@@ -56,7 +56,7 @@ test('Export Step 1: Verify products before export', async () => {
   const bodyText = await page.locator('body').innerText();
   console.log('Page has products:', bodyText.includes('Battery char') || bodyText.includes('Stage'));
 
-  try { await page.screenshot({ path: 'screenshots/pom-export-1-before.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-export-1-before.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 1 PASSED');
 });
 
@@ -67,7 +67,7 @@ test('Export Step 1: Verify products before export', async () => {
 test('Export Step 2: Verify Export button exists', async () => {
   test.setTimeout(60000);
   await expect(page.getByText('Export', { exact: true })).toBeVisible({ timeout: 15000 });
-  try { await page.screenshot({ path: 'screenshots/pom-export-2-button.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-export-2-button.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 2 PASSED');
 });
 
@@ -81,7 +81,7 @@ test('Export Step 3: Click Export button to export products', async () => {
   await page.getByText('Export', { exact: true }).click();
   await page.waitForTimeout(15000);
 
-  try { await page.screenshot({ path: 'screenshots/pom-export-3-clicked.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-export-3-clicked.png', fullPage: true, timeout: 5000 }); } catch {}
 
   const bodyText = await page.locator('body').innerText();
   console.log('After export click - has "export":', bodyText.toLowerCase().includes('export'));
@@ -116,7 +116,7 @@ test('Export Step 4: Handle export confirmation dialog', async () => {
     console.log('No confirmation needed');
   }
 
-  try { await page.screenshot({ path: 'screenshots/pom-export-4-confirmed.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-export-4-confirmed.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 4 PASSED');
 });
 
@@ -158,7 +158,7 @@ test('Export Step 6: Verify export status updated', async () => {
     await navPage.navigateToProducts();
   }
 
-  try { await page.screenshot({ path: 'screenshots/pom-export-6-status.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-export-6-status.png', fullPage: true, timeout: 5000 }); } catch {}
 
   const bodyText = await page.locator('body').innerText();
 
@@ -185,7 +185,7 @@ test('Export Step 7: Verify products with errors were not exported', async () =>
   console.log('Contains "Stage 1":', bodyText.includes('Stage 1'));
   console.log('Contains "Stage 2":', bodyText.includes('Stage 2'));
 
-  try { await page.screenshot({ path: 'screenshots/pom-export-7-error-products.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-export-7-error-products.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 7 PASSED');
 });
 
@@ -297,6 +297,6 @@ test('Export negative: export dialog can be cancelled without exporting', async 
     console.log('Export button not visible — skipping');
   }
 
-  try { await page.screenshot({ path: 'screenshots/pom-export-neg-cancelled.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-export-neg-cancelled.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('EXPORT NEG CANCEL TEST PASSED');
 });

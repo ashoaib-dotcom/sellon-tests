@@ -15,7 +15,7 @@ test.beforeAll(async () => {
   test.setTimeout(300000);
 
   browser = await chromium.launch({
-    headless: false,
+    headless: true,
     channel: 'chrome',
     args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
   });
@@ -50,7 +50,7 @@ test.beforeAll(async () => {
     console.log('Stock update CSV created');
   }
 
-  await loginPage.login('ashoaib', 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
   await navPage.navigateToProducts();
   console.log('SETUP COMPLETE');
 });
@@ -70,7 +70,7 @@ test('Stock Import Step 1: Verify products before stock update', async () => {
   await productListPage.expectTableVisible();
   const pagination = await productListPage.getPaginationText();
   console.log('Products before stock update:', pagination);
-  try { await page.screenshot({ path: 'screenshots/pom-stock-1-before.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-stock-1-before.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 1 PASSED');
 });
 
@@ -82,7 +82,7 @@ test('Stock Import Step 2: Click Stock import button', async () => {
   test.setTimeout(120000);
   await page.getByText('Stock import', { exact: true }).click();
   await page.waitForTimeout(10000);
-  try { await page.screenshot({ path: 'screenshots/pom-stock-2-dialog.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-stock-2-dialog.png', fullPage: true, timeout: 5000 }); } catch {}
 
   const buttons = await page.getByRole('button').allTextContents();
   console.log('Stock import dialog buttons:', buttons);
@@ -110,7 +110,7 @@ test('Stock Import Step 3: Try import without file - expect error', async () => 
     } catch {}
   }
 
-  try { await page.screenshot({ path: 'screenshots/pom-stock-3-no-file-error.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-stock-3-no-file-error.png', fullPage: true, timeout: 5000 }); } catch {}
 
   const bodyText = await page.locator('body').innerText();
   console.log('Contains "error":', bodyText.toLowerCase().includes('error'));
@@ -144,7 +144,7 @@ test('Stock Import Step 4: Close error and reopen dialog', async () => {
     }
   }
 
-  try { await page.screenshot({ path: 'screenshots/pom-stock-4-reopened.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-stock-4-reopened.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 4 PASSED');
 });
 
@@ -165,7 +165,7 @@ test('Stock Import Step 5: Upload stock update CSV', async () => {
   }
 
   await page.waitForTimeout(5000);
-  try { await page.screenshot({ path: 'screenshots/pom-stock-5-uploaded.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-stock-5-uploaded.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 5 PASSED');
 });
 
@@ -189,7 +189,7 @@ test('Stock Import Step 6: Run the stock import', async () => {
     } catch {}
   }
 
-  try { await page.screenshot({ path: 'screenshots/pom-stock-6-started.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-stock-6-started.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 6 PASSED');
 });
 
@@ -285,6 +285,6 @@ test('Stock Import negative: uploading a non-CSV file should show an error', asy
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1000);
 
-  try { await page.screenshot({ path: 'screenshots/pom-stock-neg-wrong-filetype.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-stock-neg-wrong-filetype.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STOCK IMPORT NEG WRONG FILE TYPE TEST PASSED');
 });

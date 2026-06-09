@@ -14,7 +14,7 @@ test.beforeAll(async () => {
   test.setTimeout(300000);
 
   browser = await chromium.launch({
-    headless: false,
+    headless: true,
     channel: 'chrome',
     args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
   });
@@ -29,7 +29,7 @@ test.beforeAll(async () => {
   navPage = new NavigationPage(page);
   productListPage = new ProductListPage(page);
 
-  await loginPage.login('ashoaib', 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
   await navPage.navigateToProducts();
   console.log('SETUP COMPLETE');
 });
@@ -43,7 +43,7 @@ test.describe.configure({ mode: 'serial' });
 test('Import Step 2: Click Import button', async () => {
   test.setTimeout(120000);
   await productListPage.clickImport();
-  try { await page.screenshot({ path: 'screenshots/pom-import-2-dialog.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-import-2-dialog.png', fullPage: true, timeout: 5000 }); } catch {}
   const buttons = await page.getByRole('button').allTextContents();
   console.log('Dialog buttons:', buttons);
   console.log('STEP 2 PASSED');
@@ -62,7 +62,7 @@ test('Import Step 3: Try import without file', async () => {
       }
     } catch {}
   }
-  try { await page.screenshot({ path: 'screenshots/pom-import-3-no-file-error.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-import-3-no-file-error.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 3 PASSED');
 });
 
@@ -93,7 +93,7 @@ test('Import Step 5: Upload CSV file', async () => {
     console.log('File uploaded');
   }
   await page.waitForTimeout(5000);
-  try { await page.screenshot({ path: 'screenshots/pom-import-5-uploaded.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-import-5-uploaded.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 5 PASSED');
 });
 
@@ -110,7 +110,7 @@ test('Import Step 6: Run the import', async () => {
       }
     } catch {}
   }
-  try { await page.screenshot({ path: 'screenshots/pom-import-6-started.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/pom-import-6-started.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 6 PASSED');
 });
 
