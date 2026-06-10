@@ -1,4 +1,8 @@
 import { defineConfig } from '@playwright/test';
+import * as fs from 'fs';
+
+// Use auth-state.json only if it exists
+const storageState = fs.existsSync('auth-state.json') ? 'auth-state.json' : undefined;
 
 export default defineConfig({
   testDir: './tests',
@@ -7,23 +11,15 @@ export default defineConfig({
   expect: {
     timeout: 30000,
   },
-
-  // ← ADD THESE TWO LINES
-  globalSetup: require.resolve('./global-setup'),
-  globalTeardown: require.resolve('./global-teardown'),
-
   use: {
-    baseURL: process.env.BASE_URL || 'https://your-app-url.com',
+    baseURL: process.env.BASE_URL || 'https://stage.sellon.ch/',
+    storageState: storageState,
     headless: true,
-    channel: 'chrome',
+    channel: 'chromium',
     viewport: { width: 1920, height: 1080 },
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     navigationTimeout: 120000,
     actionTimeout: 30000,
-
-    // ← ADD THIS - use saved session
-    storageState: 'auth-state.json',
-
     launchOptions: {
       args: [
         '--disable-blink-features=AutomationControlled',
@@ -36,7 +32,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { channel: 'chrome' },
+      use: { channel: 'chromium' },
     },
   ],
   reporter: [['html'], ['list']],

@@ -1,29 +1,20 @@
-import { test, expect, chromium, Page, Browser } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { LoginPage } from '../pages/login.page';
 import { DashboardPage } from '../pages/dashboard.page';
 import { NavigationPage } from '../pages/navigation.page';
 import { ProductListPage } from '../pages/product-list.page';
 
-let browser: Browser;
 let page: Page;
 let loginPage: LoginPage;
 let dashboardPage: DashboardPage;
 let navPage: NavigationPage;
 let productListPage: ProductListPage;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({ browser }) => {
   test.setTimeout(300000);
 
-  browser = await chromium.launch({
-    headless: true,
-    channel: 'chrome',
-    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
-  });
-
-  const context = await browser.newContext({
-    viewport: { width: 1920, height: 1080 },
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  });
+  // Use storageState from playwright.config.ts (auth-state.json)
+  const context = await browser.newContext();
 
   page = await context.newPage();
   loginPage = new LoginPage(page);
@@ -31,12 +22,28 @@ test.beforeAll(async () => {
   navPage = new NavigationPage(page);
   productListPage = new ProductListPage(page);
 
-  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
-  console.log('LOGIN COMPLETE');
+  // Check if already logged in via storageState
+  const baseURL = process.env.BASE_URL || 'https://stage.sellon.ch/';
+  await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.waitForTimeout(3000);
+
+  // Check if login page is shown
+  const isLoginPage = await page.locator('input[type="password"]').isVisible({ timeout: 5000 }).catch(() => false);
+
+  if (isLoginPage) {
+    console.log('Not logged in — logging in now...');
+    await loginPage.login(
+      process.env.TEST_USERNAME || 'ashoaib',
+      process.env.TEST_PASSWORD || 'test2'
+    );
+    console.log('LOGIN COMPLETE');
+  } else {
+    console.log('Already logged in via auth-state.json ✅');
+  }
 });
 
 test.afterAll(async () => {
-  await browser.close();
+  await page.close();
 });
 
 test.describe.configure({ mode: 'serial' });
@@ -60,7 +67,6 @@ test('Dashboard: Products section should show total, complete, incomplete, inval
   test.setTimeout(60000);
   const bodyText = await dashboardPage.getBodyText();
 
-  // Stage 2 = complete, Stage 1 = incomplete, Error = invalid
   console.log('Contains "Stage 1" (incomplete):', bodyText.includes('Stage 1'));
   console.log('Contains "Stage 2" (complete):', bodyText.includes('Stage 2'));
   console.log('Contains "Error" (invalid):', bodyText.includes('Error'));
@@ -119,11 +125,8 @@ test('Dashboard: Import section should show recent imports and stock updates', a
   console.log('Contains "Import":', bodyText.includes('Import'));
   console.log('Contains "UpdateStock":', bodyText.includes('UpdateStock'));
 
-  // Should show dates
   const hasDate = /\d{2}[./]\d{2}[./]\d{4}|\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}/.test(bodyText);
   console.log('Contains dates:', hasDate);
-
-  // Should show affected product counts
   console.log('Contains numbers:', /\d+/.test(bodyText));
 
   await dashboardPage.screenshot('pom-dash-import');
@@ -188,11 +191,9 @@ test('Dashboard: should display in user locale language', async () => {
 
   const bodyText = await dashboardPage.getBodyText();
 
-  // Check date format matches locale (DD/MM/YYYY or MM/DD/YYYY)
   const hasLocaleDates = /\d{2}\/\d{2}\/\d{4}|\d{2}\.\d{2}\.\d{4}/.test(bodyText);
   console.log('Contains locale formatted dates:', hasLocaleDates);
 
-  // Check time format
   const hasLocaleTime = /\d{1,2}:\d{2}\s?(AM|PM)?/.test(bodyText);
   console.log('Contains locale formatted time:', hasLocaleTime);
 
@@ -275,10 +276,7 @@ test('Product: should display pagination controls', async () => {
 test('Product: should verify only company products are shown', async () => {
   test.setTimeout(60000);
   const bodyText = await dashboardPage.getBodyText();
-
-  // All products should belong to current company
   console.log('Contains company products:', bodyText.includes('Battery char') || bodyText.includes('PowerCell'));
-
   await dashboardPage.screenshot('pom-product-company-check');
   console.log('COMPANY PRODUCTS TEST PASSED');
 });
@@ -316,7 +314,6 @@ test('Product overview: should sort by clicking column header', async () => {
   await navPage.navigateToProducts();
   await productListPage.expectTableVisible();
 
-  // Click the Name column header to sort
   const nameHeader = page.getByTitle('Name', { exact: true });
   await nameHeader.click();
   await page.waitForTimeout(3000);
@@ -325,7 +322,6 @@ test('Product overview: should sort by clicking column header', async () => {
   expect(rowCountAfterSort).toBeGreaterThan(0);
   console.log('Rows after sort by Name:', rowCountAfterSort);
 
-  // Click again to reverse sort
   await nameHeader.click();
   await page.waitForTimeout(3000);
   await dashboardPage.screenshot('pom-product-sort');
@@ -340,7 +336,6 @@ test('Product overview: export status and product stage visible in list', async 
   const hasStage = bodyText.includes('Stage 1') || bodyText.includes('Stage 2') || bodyText.includes('Error');
   console.log('Stage indicators visible:', hasStage);
 
-  // Export status column should be present
   const hasExportStatus = await page.getByTitle('Export', { exact: true }).isVisible({ timeout: 5000 }).catch(() => false);
   console.log('Export status column visible:', hasExportStatus);
 
@@ -355,12 +350,10 @@ test('Product overview: export status and product stage visible in list', async 
 test('Dashboard: navigate back via menu and verify counts updated', async () => {
   test.setTimeout(120000);
 
-  // Navigate to products, refresh, then return to dashboard via menu
   await navPage.navigateToProducts();
   await productListPage.clickRefresh();
   await page.waitForTimeout(3000);
 
-  // Navigate back to dashboard via the sidebar menu
   await navPage.navigateToDashboard();
 
   const bodyText = await dashboardPage.getBodyText();
@@ -372,8 +365,6 @@ test('Dashboard: navigate back via menu and verify counts updated', async () => 
   console.log('NAVIGATE BACK TO DASHBOARD TEST PASSED');
 });
 
-
-
 // ==========================================
 // NEGATIVE TESTS
 // ==========================================
@@ -384,7 +375,6 @@ test('Dashboard negative: all numeric counts should be zero or positive', async 
   await navPage.navigateToDashboard();
   const bodyText = await dashboardPage.getBodyText();
 
-  // Extract all standalone numbers from the dashboard
   const numbers = [...bodyText.matchAll(/\b(\d+)\b/g)].map(m => parseInt(m[1]));
   const allNonNegative = numbers.every(n => n >= 0);
   console.log('All dashboard counts non-negative:', allNonNegative);
@@ -399,16 +389,15 @@ test('Dashboard negative: incomplete products count should not exceed total', as
 
   const bodyText = await dashboardPage.getBodyText();
 
-  // Parse the Products section counts
-  const totalMatch  = bodyText.match(/Total\s+(\d+)/);
-  const invalidMatch = bodyText.match(/Invalid\s+(\d+)/);
+  const totalMatch     = bodyText.match(/Total\s+(\d+)/);
+  const invalidMatch   = bodyText.match(/Invalid\s+(\d+)/);
   const incompleteMatch = bodyText.match(/Incomplete\s+(\d+)/);
-  const completeMatch = bodyText.match(/Complete\s+(\d+)/);
+  const completeMatch  = bodyText.match(/Complete\s+(\d+)/);
 
-  const total      = totalMatch ? parseInt(totalMatch[1]) : 0;
-  const invalid    = invalidMatch ? parseInt(invalidMatch[1]) : 0;
+  const total      = totalMatch      ? parseInt(totalMatch[1])      : 0;
+  const invalid    = invalidMatch    ? parseInt(invalidMatch[1])    : 0;
   const incomplete = incompleteMatch ? parseInt(incompleteMatch[1]) : 0;
-  const complete   = completeMatch ? parseInt(completeMatch[1]) : 0;
+  const complete   = completeMatch   ? parseInt(completeMatch[1])   : 0;
 
   console.log(`Products — Total: ${total} | Complete: ${complete} | Incomplete: ${incomplete} | Invalid: ${invalid}`);
   console.log('Complete <= Total:', complete <= total);
