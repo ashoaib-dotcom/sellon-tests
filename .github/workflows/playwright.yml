@@ -52,6 +52,8 @@ jobs:
             file: tests/product-validations-pom.spec.ts
           - test-suite: order-workflow
             file: tests/order-workflow-pom.spec.ts
+          - test-suite: sftp-upload
+            file: tests/sftp-upload-pom.spec.ts
 
     steps:
       - name: Checkout repository
@@ -78,6 +80,13 @@ jobs:
           TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
           BASE_URL: ${{ secrets.BASE_URL }}
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          SFTP_REMOTE_IN_DIR: ${{ secrets.SFTP_REMOTE_IN_DIR }}
+          SFTP_REMOTE_OUT_DIR: ${{ secrets.SFTP_REMOTE_OUT_DIR }}
+          SFTP_SUPPLIER_ID: ${{ secrets.SFTP_SUPPLIER_ID }}
 
       - name: Upload screenshots
         uses: actions/upload-artifact@v4

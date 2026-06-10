@@ -1,13 +1,14 @@
 import { test, expect, chromium, Page, Browser } from '@playwright/test';
 import { LoginPage } from '../pages/login.page';
-import { NavigationPage } from '../pages/navigation.page';
 import { OrdersPage } from '../pages/orders.page';
+import { getSftpHelper, SftpHelper } from '../helpers/sftp-upload';
+import { buildGORDR, buildGDELR, buildGCANR, buildGSURN, buildGCANP, buildGRETP } from '../helpers/edi-builder';
 
 let browser: Browser;
 let page: Page;
 let loginPage: LoginPage;
-let navPage: NavigationPage;
 let ordersPage: OrdersPage;
+let sftp: SftpHelper;
 
 // ─── Inline helpers ───────────────────────────────────────────────────────────
 
@@ -107,8 +108,50 @@ async function clickButton(namePattern: RegExp | string, label?: string): Promis
   }
 }
 
-async function importEDIFromUI(ediType: string): Promise<boolean> {
-  // Look for an Import EDI / Import CANP / Import button specific to order detail
+// Upload EDI via SFTP then (optionally) click a UI import button.
+// orderId and positions are used to build the correct EDI content.
+async function importEDI(
+  ediType: 'CANP' | 'RETP' | 'GORDR' | 'GDELR' | 'GCANR' | 'GSURN',
+  orderId: string,
+  opts: {
+    positions?:   { sku: string; qty?: number }[];
+    decision?:    'Accepted' | 'Rejected';
+    message?:     string;
+    shipmentRef?: string;
+    carrier?:     string;
+    reason?:      string;
+  } = {},
+): Promise<boolean> {
+  // ── 1. SFTP upload ──────────────────────────────────────────────────────────
+  let sftpOk = false;
+  try {
+    let edi: { content: string; filename: string } | null = null;
+    const positions = opts.positions || [];
+    const withQty   = positions.map(p => ({ sku: p.sku, qty: p.qty ?? 1 }));
+
+    if (ediType === 'GCANR') {
+      edi = buildGCANR(orderId, opts.decision ?? 'Accepted', opts.message ?? 'Handled by automated test');
+    } else if (ediType === 'GSURN') {
+      edi = buildGSURN(orderId, opts.decision ?? 'Accepted', positions, opts.message ?? 'Return handled');
+    } else if (ediType === 'GORDR') {
+      edi = buildGORDR(orderId, withQty);
+    } else if (ediType === 'GDELR') {
+      edi = buildGDELR(orderId, withQty, opts.shipmentRef ?? `SHIP-${Date.now()}`, opts.carrier ?? 'DHL');
+    } else if (ediType === 'CANP') {
+      edi = buildGCANP(orderId, positions, opts.reason ?? 'Test cancellation');
+    } else if (ediType === 'RETP') {
+      edi = buildGRETP(orderId, withQty, opts.reason ?? 'Test return');
+    }
+
+    if (edi) {
+      sftpOk = await sftp.uploadEDIContent(edi.content, edi.filename);
+      if (sftpOk) await page.waitForTimeout(5000); // give platform time to process
+    }
+  } catch (e) {
+    console.log(`  SFTP upload for ${ediType} failed:`, (e as Error).message);
+  }
+
+  // ── 2. UI import button fallback ────────────────────────────────────────────
   const importSelectors = [
     page.getByRole('button', { name: new RegExp(ediType, 'i') }).filter({ visible: true }).first(),
     page.getByText(`Import ${ediType}`, { exact: false }).filter({ visible: true }).first(),
@@ -118,11 +161,16 @@ async function importEDIFromUI(ediType: string): Promise<boolean> {
     if (await btn.count() > 0) {
       await btn.click();
       await page.waitForTimeout(5000);
-      console.log(`  Triggered import for ${ediType}`);
+      console.log(`  UI import triggered for ${ediType}`);
       return true;
     }
   }
-  console.log(`  No import button found for ${ediType} — EDI import may happen via SFTP automatically`);
+
+  if (sftpOk) {
+    console.log(`  ${ediType} delivered via SFTP (no UI import button found)`);
+    return true;
+  }
+  console.log(`  ${ediType}: no SFTP config and no UI import button found`);
   return false;
 }
 
@@ -135,6 +183,51 @@ async function saveOrder() {
 async function screenshot(name: string) {
   try { await page.screenshot({ path: `screenshots/${name}.png`, fullPage: true, timeout: 10000 }); } catch {}
 }
+
+// Scans the orders list for rows in "New" status and returns up to `limit` order IDs.
+async function discoverNewOrders(limit = 3): Promise<string[]> {
+  await ordersPage.navigateToOrders();
+  await page.waitForTimeout(3000);
+
+  // Apply status filter if available
+  try {
+    const statusColIdx = await ordersPage.findColumnIndex('status');
+    if (statusColIdx >= 0) {
+      await ordersPage.setDropdownFilter(statusColIdx, 'New');
+      await ordersPage.clickSearch();
+    }
+  } catch {}
+
+  const rows = page.locator('tbody tr');
+  const rowCount = await rows.count();
+  const ids: string[] = [];
+
+  for (let i = 0; i < rowCount && ids.length < limit; i++) {
+    const row = rows.nth(i);
+    const rowText = await row.innerText();
+    if (!rowText.toLowerCase().includes('new')) continue;
+
+    // Order ID is the first cell that looks like a long number
+    const cells = await row.locator('td').allInnerTexts();
+    for (const cell of cells) {
+      if (/^\d{5,}$/.test(cell.trim())) {
+        ids.push(cell.trim());
+        console.log(`  Discovered New order: ${cell.trim()}`);
+        break;
+      }
+    }
+  }
+
+  if (ids.length === 0) console.log('  No New orders found in the orders list');
+  return ids;
+}
+
+// ─── Order IDs — populated at runtime in beforeAll ────────────────────────────
+// Initial values are used as test-name labels (evaluated at module load time).
+// Test bodies run after beforeAll and read the current (discovered) values.
+let ORDER_1 = 'Order-1';
+let ORDER_2 = 'Order-2';
+let ORDER_3 = 'Order-3';
 
 // ─── Setup / Teardown ─────────────────────────────────────────────────────────
 
@@ -153,24 +246,34 @@ test.beforeAll(async () => {
 
   page = await context.newPage();
   loginPage = new LoginPage(page);
-  navPage = new NavigationPage(page);
   ordersPage = new OrdersPage(page);
 
+  // SFTP helper — connects lazily; skips gracefully if SFTP_HOST not set
+  sftp = getSftpHelper();
+
   await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+
+  // Discover New orders — reassign ORDER_X so all test bodies use real IDs
+  const found = await discoverNewOrders(3);
+  if (found[0]) ORDER_1 = found[0];
+  if (found[1]) ORDER_2 = found[1];
+  if (found[2]) ORDER_3 = found[2];
+  console.log(`ORDER_1=${ORDER_1}  ORDER_2=${ORDER_2}  ORDER_3=${ORDER_3}`);
   console.log('SETUP COMPLETE');
 });
 
 test.afterAll(async () => {
+  await sftp.disconnect().catch(() => {});
   await browser.close();
 });
 
 test.describe.configure({ mode: 'serial' });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ORDER 61830301
+// WORKFLOW — ORDER 1  (first discovered New order)
+// ORDER_1/2/3 are let-vars reassigned in beforeAll after dynamic discovery.
+// Test names evaluated at load time show 'Order-1/2/3'; bodies get real IDs.
 // ═══════════════════════════════════════════════════════════════════════════════
-
-const ORDER_1 = '61830301';
 
 test(`[${ORDER_1}] 1a: Browser alert notification for incoming order`, async () => {
   test.setTimeout(120000);
@@ -306,7 +409,7 @@ test(`[${ORDER_1}] 5a: CANP import alerts user in open order`, async () => {
   test.setTimeout(180000);
 
   const alertResult = registerAlertHandler(`${ORDER_1}-canp`);
-  const imported = await importEDIFromUI('CANP');
+  const imported = await importEDI('CANP', ORDER_1);
 
   if (!imported) {
     // CANP may arrive automatically via SFTP; wait and check for alert
@@ -670,7 +773,7 @@ test(`[${ORDER_1}] 9a: RETP alerts user in open order`, async () => {
   test.setTimeout(180000);
 
   const alertResult = registerAlertHandler(`${ORDER_1}-retp`);
-  await importEDIFromUI('RETP');
+  await importEDI('RETP', ORDER_1);
   await page.waitForTimeout(10000);
 
   const bodyText = await ordersPage.getBodyText();
@@ -871,10 +974,8 @@ test(`[${ORDER_1}] 12: Verify messages using diff tool`, async () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ORDER 61830302
+// WORKFLOW — ORDER 2  (second discovered New order)
 // ═══════════════════════════════════════════════════════════════════════════════
-
-const ORDER_2 = '61830302';
 
 test(`[${ORDER_2}] 1: Order appears in overview`, async () => {
   test.setTimeout(120000);
@@ -940,7 +1041,7 @@ test(`[${ORDER_2}] 3: Warning shown for insufficient stock of BB-FLA-002 and BT-
 test(`[${ORDER_2}] 4a-i: Approve 6 of 10 for BT-SPK-002 — status To confirm`, async () => {
   test.setTimeout(180000);
 
-  await importEDIFromUI('CANP');
+  await importEDI('CANP', ORDER_2);
   await page.waitForTimeout(5000);
   await clickTab('Cancellation request');
 
@@ -1290,10 +1391,8 @@ test(`[${ORDER_2}] 12: Verify messages using diff tool`, async () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ORDER 61830303
+// WORKFLOW — ORDER 3  (third discovered New order)
 // ═══════════════════════════════════════════════════════════════════════════════
-
-const ORDER_3 = '61830303';
 
 test(`[${ORDER_3}] 1: Alert email shown for new order`, async () => {
   test.setTimeout(120000);
@@ -1486,7 +1585,7 @@ test(`[${ORDER_3}] 8a-b: CANP alert shown and positions not editable`, async () 
   test.setTimeout(180000);
 
   const alertResult = registerAlertHandler(`${ORDER_3}-canp`);
-  await importEDIFromUI('CANP');
+  await importEDI('CANP', ORDER_3);
   await page.waitForTimeout(10000);
 
   const hasAlert = alertResult.triggered || (await ordersPage.getBodyText()).toLowerCase().includes('cancellation');
@@ -1598,7 +1697,7 @@ test(`[${ORDER_3}] 10a-b: Import RETP — message shown; cannot accept before sh
   test.setTimeout(180000);
 
   const alertResult = registerAlertHandler(`${ORDER_3}-retp`);
-  await importEDIFromUI('RETP');
+  await importEDI('RETP', ORDER_3);
   await page.waitForTimeout(10000);
   await clickTab('Return request');
 
@@ -2205,7 +2304,7 @@ test(`[${ORDER_3}] 10a: RETP alert message shown to user in open order`, async (
   if (!opened) { console.log('Order not found — skipping'); return; }
 
   const alertResult = registerAlertHandler(`${ORDER_3}-retp-explicit`);
-  await importEDIFromUI('RETP');
+  await importEDI('RETP', ORDER_3);
   await page.waitForTimeout(10000);
 
   const bodyText = await ordersPage.getBodyText();
