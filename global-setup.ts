@@ -113,16 +113,50 @@ async function globalSetup() {
       }
     }
 
-    // Wait for login to complete
+    // Wait for page transition
     console.log('⏳ Waiting for login to complete...');
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(3000);
     await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+
+    // Handle session popup ("You have an active session — continue?")
+    try {
+      const sessionBtn = page.getByRole('button', { name: /^(Yes|Continue|OK)$/i }).first();
+      await sessionBtn.waitFor({ state: 'visible', timeout: 8000 });
+      await sessionBtn.click();
+      console.log('✅ Session popup handled — clicked continue');
+      await page.waitForTimeout(3000);
+      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+    } catch {
+      console.log('No session popup found');
+    }
+
+    // If redirected back to login after session popup, log in again
+    try {
+      const isLoginAgain = await page.locator('input[type="password"]').isVisible({ timeout: 5000 });
+      if (isLoginAgain) {
+        console.log('📝 Back on login page — logging in again...');
+        await page.locator('input[type="text"]').first().fill(process.env.TEST_USERNAME || '');
+        await page.locator('input[type="password"]').first().fill(process.env.TEST_PASSWORD || '');
+        await page.locator('button[type="submit"]').click({ timeout: 5000 }).catch(() =>
+          page.locator('button').first().click({ timeout: 5000 })
+        );
+        await page.waitForTimeout(5000);
+        await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+      }
+    } catch {
+      console.log('Not on login page — login succeeded');
+    }
 
     // Screenshot after login
     await page.screenshot({ path: 'after-login.png', fullPage: true });
     console.log('📸 After login screenshot saved');
     console.log('URL after login:', page.url());
     console.log('Title after login:', await page.title());
+
+    // Wait for app shell to confirm login success before saving state
+    console.log('⏳ Waiting for dashboard app shell...');
+    await page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 60000 });
+    console.log('✅ Dashboard loaded — login confirmed');
 
     // Save auth state
     console.log('💾 Saving auth-state.json...');
@@ -132,8 +166,7 @@ async function globalSetup() {
   } catch (error) {
     console.error('❌ Global setup error:', error);
     await page.screenshot({ path: 'error-screenshot.png', fullPage: true }).catch(() => {});
-    // Save state even on error so other tests can still try
-    await context.storageState({ path: 'auth-state.json' }).catch(() => {});
+    // Do NOT save an unauthenticated state — tests will fall back to manual login
     throw error;
   } finally {
     await browser.close();

@@ -33,6 +33,20 @@ test.beforeAll(async ({ browser }) => {
     console.log('🔐 Using saved auth state...');
     await page.goto(process.env.BASE_URL || 'https://stage.sellon.ch/', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+    try {
+      const sessionBtn = page.getByRole('button', { name: /^(Yes|Continue|OK)$/i }).first();
+      await sessionBtn.waitFor({ state: 'visible', timeout: 8000 });
+      await sessionBtn.click();
+      console.log('Session popup handled');
+      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+      await page.waitForTimeout(3000);
+    } catch {}
+    const menuVisible = await page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 15000 })
+      .then(() => true).catch(() => false);
+    if (!menuVisible) {
+      console.log('⚠️ Auth state invalid — falling back to manual login');
+      await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+    }
   }
 
   // Login complete - now wait for dashboard to fully render
