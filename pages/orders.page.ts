@@ -14,15 +14,25 @@ export class OrdersPage extends BasePage {
       }
     } catch {}
 
+    // Open sidebar
     await this.page.locator('.menu-icon').click();
     await this.waitForLoad(2);
 
+    // Expand the Orders parent if the sub-item isn't already visible
     const orderItems = this.page.locator('nav').getByText('Orders', { exact: true });
-    await orderItems.first().click();
-    await this.waitForLoad(2);
+    const visibleCount = await orderItems.count();
+    if (visibleCount < 2) {
+      const parentItem = orderItems.first();
+      await parentItem.scrollIntoViewIfNeeded();
+      await this.page.waitForTimeout(500);
+      await parentItem.click({ force: true });
+      await this.waitForLoad(2);
+    }
 
+    // Click the Orders sub-item
     const subItem = this.page.locator('nav').getByText('Orders', { exact: true }).nth(1);
     await subItem.scrollIntoViewIfNeeded();
+    await this.page.waitForTimeout(500);
     await subItem.dispatchEvent('click');
     await this.waitForLoad(15);
 
