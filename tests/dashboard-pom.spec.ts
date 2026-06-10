@@ -1,5 +1,4 @@
 import { test, expect, Page } from '@playwright/test';
-import * as fs from 'fs';
 import { LoginPage } from '../pages/login.page';
 import { DashboardPage } from '../pages/dashboard.page';
 import { NavigationPage } from '../pages/navigation.page';
@@ -14,9 +13,7 @@ let productListPage: ProductListPage;
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(300000);
 
-  const context = await browser.newContext({
-    storageState: fs.existsSync('auth-state.json') ? 'auth-state.json' : undefined,
-  });
+  const context = await browser.newContext({});
   page = await context.newPage();
 
   loginPage     = new LoginPage(page);
@@ -24,30 +21,7 @@ test.beforeAll(async ({ browser }) => {
   navPage       = new NavigationPage(page);
   productListPage = new ProductListPage(page);
 
-  if (!fs.existsSync('auth-state.json')) {
-    const username = process.env.TEST_USERNAME || 'ashoaib';
-    const password = process.env.TEST_PASSWORD || 'test2';
-    console.log('🔐 Starting login...');
-    await loginPage.login(username, password);
-  } else {
-    console.log('🔐 Using saved auth state...');
-    await page.goto(process.env.BASE_URL || 'https://stage.sellon.ch/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
-    try {
-      const sessionBtn = page.getByRole('button', { name: /^(Yes|Continue|OK)$/i }).first();
-      await sessionBtn.waitFor({ state: 'visible', timeout: 8000 });
-      await sessionBtn.click();
-      console.log('Session popup handled');
-      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
-      await page.waitForTimeout(3000);
-    } catch {}
-    const menuVisible = await page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 15000 })
-      .then(() => true).catch(() => false);
-    if (!menuVisible) {
-      console.log('⚠️ Auth state invalid — falling back to manual login');
-      await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
-    }
-  }
+  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
 
   // Login complete - now wait for dashboard to fully render
   console.log('⏳ Waiting for dashboard content...');

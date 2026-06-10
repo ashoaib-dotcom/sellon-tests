@@ -1,8 +1,4 @@
 import { defineConfig } from '@playwright/test';
-import * as fs from 'fs';
-
-// Use auth-state.json only if it exists
-const storageState = fs.existsSync('auth-state.json') ? 'auth-state.json' : undefined;
 
 export default defineConfig({
   testDir: './tests',
@@ -13,7 +9,6 @@ export default defineConfig({
   },
   use: {
     baseURL: process.env.BASE_URL || 'https://stage.sellon.ch/',
-    storageState: storageState,
     headless: true,
     channel: 'chromium',
     viewport: { width: 1920, height: 1080 },

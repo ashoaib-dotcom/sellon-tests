@@ -1,5 +1,4 @@
 import { test, chromium, Page, Browser } from '@playwright/test';
-import * as fs from 'fs';
 import { LoginPage } from '../pages/login.page';
 import { OrdersPage } from '../pages/orders.page';
 
@@ -26,34 +25,13 @@ test.beforeAll(async () => {
   const context = await browser.newContext({
     viewport: { width: 1920, height: 1080 },
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    storageState: fs.existsSync('auth-state.json') ? 'auth-state.json' : undefined,
   });
 
   page = await context.newPage();
   loginPage = new LoginPage(page);
   ordersPage = new OrdersPage(page);
 
-  if (!fs.existsSync('auth-state.json')) {
-    await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
-  } else {
-    console.log('🔐 Using saved auth state...');
-    await page.goto(process.env.BASE_URL || 'https://stage.sellon.ch/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
-    try {
-      const sessionBtn = page.getByRole('button', { name: /^(Yes|Continue|OK)$/i }).first();
-      await sessionBtn.waitFor({ state: 'visible', timeout: 8000 });
-      await sessionBtn.click();
-      console.log('Session popup handled');
-      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
-      await page.waitForTimeout(3000);
-    } catch {}
-    const menuVisible = await page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 15000 })
-      .then(() => true).catch(() => false);
-    if (!menuVisible) {
-      console.log('⚠️ Auth state invalid — falling back to manual login');
-      await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
-    }
-  }
+  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
   await ordersPage.navigateToOrders();
   console.log('SETUP COMPLETE — pagination:', await ordersPage.getPaginationText());
 });
