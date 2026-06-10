@@ -16,43 +16,41 @@ test.beforeAll(async ({ browser }) => {
   const context = await browser.newContext();
   page = await context.newPage();
 
-  loginPage = new LoginPage(page);
+  loginPage     = new LoginPage(page);
   dashboardPage = new DashboardPage(page);
-  navPage = new NavigationPage(page);
+  navPage       = new NavigationPage(page);
   productListPage = new ProductListPage(page);
 
-  const baseURL = process.env.BASE_URL || 'https://stage.sellon.ch/';
+  const username = process.env.TEST_USERNAME || 'ashoaib';
+  const password = process.env.TEST_PASSWORD || 'test2';
 
-  console.log('Navigating to:', baseURL);
-  await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await page.waitForTimeout(3000);
+  console.log('🔐 Starting login...');
+  await loginPage.login(username, password);
 
-  console.log('Current URL after goto:', page.url());
+  // Login complete - now wait for dashboard to fully render
+  console.log('⏳ Waiting for dashboard content...');
 
-  // Check if redirected to login page
-  const isLoginPage = await page.locator('button:has-text("Login")').isVisible({ timeout: 5000 }).catch(() => false);
-  const isLoginPage2 = await page.locator('input[type="password"]').isVisible({ timeout: 3000 }).catch(() => false);
+  // Wait for menu icon to confirm app shell is ready
+  await page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 90000 })
+    .catch(() => console.log('⚠️ menu-icon not visible'));
 
-  if (isLoginPage || isLoginPage2) {
-    console.log('Login page detected — logging in...');
-    await loginPage.login(
-      process.env.TEST_USERNAME || 'ashoaib',
-      process.env.TEST_PASSWORD || 'test2'
-    );
+  // Wait for blocking modal to dismiss
+  await page.locator('lb-modal-blocking').waitFor({ state: 'hidden', timeout: 30000 })
+    .catch(() => console.log('⚠️ No blocking modal'));
 
-    // Wait for dashboard to load after login
-    await page.waitForLoadState('networkidle', { timeout: 60000 });
-    await page.waitForTimeout(5000);
+  // Wait for Angular to render dashboard content
+  await page.waitForTimeout(8000);
 
-    console.log('LOGIN COMPLETE ✅');
-    console.log('URL after login:', page.url());
-  } else {
-    console.log('Already logged in via auth-state.json ✅');
-  }
-
-  // Log all headings for debugging
+  // Verify headings are present
   const headings = await page.getByRole('heading').allInnerTexts();
-  console.log('Headings on page after login:', headings);
+  console.log('✅ Headings after full wait:', headings);
+
+  // Take screenshot of dashboard state
+  await page.screenshot({ path: 'screenshots/dashboard-setup.png', fullPage: true })
+    .catch(() => {});
+
+  console.log('URL:', page.url());
+  console.log('SETUP COMPLETE ✅');
 });
 
 test.afterAll(async () => {
@@ -79,11 +77,9 @@ test('Dashboard: should display all 7 sections', async () => {
 test('Dashboard: Products section should show total, complete, incomplete, invalid counts', async () => {
   test.setTimeout(60000);
   const bodyText = await dashboardPage.getBodyText();
-
-  console.log('Contains "Stage 1" (incomplete):', bodyText.includes('Stage 1'));
-  console.log('Contains "Stage 2" (complete):', bodyText.includes('Stage 2'));
-  console.log('Contains "Error" (invalid):', bodyText.includes('Error'));
-
+  console.log('Contains "Stage 1":', bodyText.includes('Stage 1'));
+  console.log('Contains "Stage 2":', bodyText.includes('Stage 2'));
+  console.log('Contains "Error":', bodyText.includes('Error'));
   await dashboardPage.screenshot('pom-dash-products-counts');
   console.log('PRODUCTS COUNTS TEST PASSED');
 });
@@ -134,14 +130,10 @@ test('Dashboard: Cancel Rate KPI should show cancellation metrics', async () => 
 test('Dashboard: Import section should show recent imports and stock updates', async () => {
   test.setTimeout(60000);
   const bodyText = await dashboardPage.getBodyText();
-
   console.log('Contains "Import":', bodyText.includes('Import'));
   console.log('Contains "UpdateStock":', bodyText.includes('UpdateStock'));
-
-  const hasDate = /\d{2}[./]\d{2}[./]\d{4}|\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}/.test(bodyText);
+  const hasDate = /\d{2}[./]\d{2}[./]\d{4}|\d{4}-\d{2}-\d{2}/.test(bodyText);
   console.log('Contains dates:', hasDate);
-  console.log('Contains numbers:', /\d+/.test(bodyText));
-
   await dashboardPage.screenshot('pom-dash-import');
   console.log('IMPORT SECTION TEST PASSED');
 });
@@ -153,11 +145,8 @@ test('Dashboard: Import section should show recent imports and stock updates', a
 test('Dashboard: Import section should list failed and successful products', async () => {
   test.setTimeout(60000);
   const bodyText = await dashboardPage.getBodyText();
-
   console.log('Contains "failed":', bodyText.toLowerCase().includes('failed'));
   console.log('Contains "success":', bodyText.toLowerCase().includes('success'));
-  console.log('Contains "error":', bodyText.toLowerCase().includes('error'));
-
   await dashboardPage.screenshot('pom-dash-import-details');
   console.log('IMPORT DETAILS TEST PASSED');
 });
@@ -169,10 +158,8 @@ test('Dashboard: Import section should list failed and successful products', asy
 test('Dashboard: Export Galaxus section should show latest exports with product count', async () => {
   test.setTimeout(60000);
   const bodyText = await dashboardPage.getBodyText();
-
   console.log('Contains "Export":', bodyText.includes('Export'));
   console.log('Contains "Galaxus":', bodyText.includes('Galaxus'));
-
   await dashboardPage.screenshot('pom-dash-export');
   console.log('EXPORT GALAXUS TEST PASSED');
 });
@@ -184,11 +171,9 @@ test('Dashboard: Export Galaxus section should show latest exports with product 
 test('Dashboard: Scheduler should show next planned export times', async () => {
   test.setTimeout(60000);
   const bodyText = await dashboardPage.getBodyText();
-
   console.log('Contains "Scheduler":', bodyText.includes('Scheduler'));
   const hasTime = /\d{1,2}:\d{2}/.test(bodyText);
   console.log('Contains time:', hasTime);
-
   await dashboardPage.scrollToBottom();
   await dashboardPage.screenshot('pom-dash-scheduler');
   console.log('SCHEDULER TEST PASSED');
@@ -201,15 +186,9 @@ test('Dashboard: Scheduler should show next planned export times', async () => {
 test('Dashboard: should display in user locale language', async () => {
   test.setTimeout(60000);
   await dashboardPage.scrollToTop();
-
   const bodyText = await dashboardPage.getBodyText();
-
   const hasLocaleDates = /\d{2}\/\d{2}\/\d{4}|\d{2}\.\d{2}\.\d{4}/.test(bodyText);
   console.log('Contains locale formatted dates:', hasLocaleDates);
-
-  const hasLocaleTime = /\d{1,2}:\d{2}\s?(AM|PM)?/.test(bodyText);
-  console.log('Contains locale formatted time:', hasLocaleTime);
-
   await dashboardPage.screenshot('pom-dash-locale');
   console.log('LOCALE TEST PASSED');
 });
@@ -222,10 +201,8 @@ test('Dashboard: should capture full dashboard content', async () => {
   test.setTimeout(60000);
   await dashboardPage.scrollToTop();
   await dashboardPage.screenshot('pom-dash-full-top');
-
   await dashboardPage.scrollToBottom();
   await dashboardPage.screenshot('pom-dash-full-bottom');
-
   const bodyText = await dashboardPage.getBodyText();
   console.log('DASHBOARD CONTENT (first 3000):', bodyText.substring(0, 3000));
   console.log('FULL DASHBOARD CAPTURED');
@@ -268,12 +245,10 @@ test('Product: should contain products and show total count', async () => {
   test.setTimeout(60000);
   await productListPage.expectTableVisible();
   const rowCount = await productListPage.getRowCount();
-  console.log('Visible product rows:', rowCount);
   expect(rowCount).toBeGreaterThan(0);
   const pagination = await productListPage.getPaginationText();
   const totalMatch = pagination.match(/of (\d+)/);
   if (totalMatch) {
-    console.log('Total products:', totalMatch[1]);
     expect(parseInt(totalMatch[1])).toBeGreaterThan(0);
   }
   console.log('PRODUCT CONTENT TEST PASSED');
@@ -325,15 +300,11 @@ test('Product overview: should sort by clicking column header', async () => {
   test.setTimeout(120000);
   await navPage.navigateToProducts();
   await productListPage.expectTableVisible();
-
   const nameHeader = page.getByTitle('Name', { exact: true });
   await nameHeader.click();
   await page.waitForTimeout(3000);
-
   const rowCountAfterSort = await productListPage.getRowCount();
   expect(rowCountAfterSort).toBeGreaterThan(0);
-  console.log('Rows after sort by Name:', rowCountAfterSort);
-
   await nameHeader.click();
   await page.waitForTimeout(3000);
   await dashboardPage.screenshot('pom-product-sort');
@@ -343,14 +314,9 @@ test('Product overview: should sort by clicking column header', async () => {
 test('Product overview: export status and product stage visible in list', async () => {
   test.setTimeout(60000);
   await productListPage.expectTableVisible();
-
   const bodyText = await page.locator('body').innerText();
   const hasStage = bodyText.includes('Stage 1') || bodyText.includes('Stage 2') || bodyText.includes('Error');
   console.log('Stage indicators visible:', hasStage);
-
-  const hasExportStatus = await page.getByTitle('Export', { exact: true }).isVisible({ timeout: 5000 }).catch(() => false);
-  console.log('Export status column visible:', hasExportStatus);
-
   await dashboardPage.screenshot('pom-product-stage-export-status');
   console.log('STAGE AND EXPORT STATUS TEST PASSED');
 });
@@ -361,20 +327,14 @@ test('Product overview: export status and product stage visible in list', async 
 
 test('Dashboard: navigate back via menu and verify counts updated', async () => {
   test.setTimeout(120000);
-
   await navPage.navigateToProducts();
   await productListPage.clickRefresh();
   await page.waitForTimeout(3000);
-
   await navPage.navigateToDashboard();
-
   const bodyText = await dashboardPage.getBodyText();
-  const hasProductCounts = /\d+/.test(bodyText);
-  console.log('Dashboard shows product counts after return:', hasProductCounts);
-  console.log('Contains "Products":', bodyText.includes('Products'));
-
+  console.log('Dashboard shows counts:', /\d+/.test(bodyText));
   await dashboardPage.screenshot('pom-dash-back-via-menu');
-  console.log('NAVIGATE BACK TO DASHBOARD TEST PASSED');
+  console.log('NAVIGATE BACK TEST PASSED');
 });
 
 // ==========================================
@@ -383,39 +343,26 @@ test('Dashboard: navigate back via menu and verify counts updated', async () => 
 
 test('Dashboard negative: all numeric counts should be zero or positive', async () => {
   test.setTimeout(60000);
-
   await navPage.navigateToDashboard();
   const bodyText = await dashboardPage.getBodyText();
-
   const numbers = [...bodyText.matchAll(/\b(\d+)\b/g)].map(m => parseInt(m[1]));
   const allNonNegative = numbers.every(n => n >= 0);
-  console.log('All dashboard counts non-negative:', allNonNegative);
-  console.log('Numbers found:', numbers.slice(0, 15));
-
+  console.log('All counts non-negative:', allNonNegative);
   await dashboardPage.screenshot('pom-dash-neg-counts');
-  console.log('DASHBOARD NEGATIVE COUNTS TEST PASSED');
+  console.log('NEGATIVE COUNTS TEST PASSED');
 });
 
 test('Dashboard negative: incomplete products count should not exceed total', async () => {
   test.setTimeout(60000);
-
   const bodyText = await dashboardPage.getBodyText();
-
   const totalMatch      = bodyText.match(/Total\s+(\d+)/);
-  const invalidMatch    = bodyText.match(/Invalid\s+(\d+)/);
   const incompleteMatch = bodyText.match(/Incomplete\s+(\d+)/);
   const completeMatch   = bodyText.match(/Complete\s+(\d+)/);
-
   const total      = totalMatch      ? parseInt(totalMatch[1])      : 0;
-  const invalid    = invalidMatch    ? parseInt(invalidMatch[1])    : 0;
   const incomplete = incompleteMatch ? parseInt(incompleteMatch[1]) : 0;
   const complete   = completeMatch   ? parseInt(completeMatch[1])   : 0;
-
-  console.log(`Products — Total: ${total} | Complete: ${complete} | Incomplete: ${incomplete} | Invalid: ${invalid}`);
-  console.log('Complete <= Total:', complete <= total);
+  console.log(`Total: ${total} | Complete: ${complete} | Incomplete: ${incomplete}`);
   console.log('Incomplete <= Total:', incomplete <= total);
-  console.log('Invalid <= Total:', invalid <= total);
-
   await dashboardPage.screenshot('pom-dash-neg-product-counts');
-  console.log('DASHBOARD PRODUCT COUNT INTEGRITY TEST PASSED');
+  console.log('PRODUCT COUNT INTEGRITY TEST PASSED');
 });

@@ -3,73 +3,92 @@ import { Page, expect } from '@playwright/test';
 export class DashboardPage {
   constructor(private page: Page) {}
 
-  // Wait for dashboard to fully load and verify we are not on login page
   async waitForDashboard() {
-    await this.page.waitForLoadState('networkidle', { timeout: 60000 });
-    await this.page.waitForTimeout(3000);
+    console.log('⏳ Waiting for dashboard to render...');
 
-    // Log current URL
-    console.log('Current URL:', this.page.url());
+    // Wait for load state
+    await this.page.waitForLoadState('load', { timeout: 60000 });
 
-    // Log all headings found on page for debugging
+    // Wait for menu icon (signals app shell is ready)
+    try {
+      await this.page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 60000 });
+      console.log('✅ Menu icon visible - app shell ready');
+    } catch {
+      console.log('⚠️ Menu icon not found - waiting longer...');
+      await this.page.waitForTimeout(10000);
+    }
+
+    // Wait for blocking modal to disappear
+    try {
+      await this.page.locator('lb-modal-blocking, lb-modal.blocking').waitFor({
+        state: 'hidden',
+        timeout: 30000
+      });
+      console.log('✅ Blocking modal gone');
+    } catch {
+      console.log('⚠️ No blocking modal');
+    }
+
+    // Wait for Angular change detection
+    await this.page.waitForTimeout(5000);
+
+    // Debug info
+    console.log('URL:', this.page.url());
     const headings = await this.page.getByRole('heading').allInnerTexts();
-    console.log('Headings found on page:', headings);
+    console.log('Headings:', headings);
 
-    // Log page title
-    console.log('Page title:', await this.page.title());
+    if (headings.length === 0) {
+      console.log('⚠️ No headings found - waiting more...');
+      await this.page.waitForTimeout(5000);
+      const headings2 = await this.page.getByRole('heading').allInnerTexts();
+      console.log('Headings after extra wait:', headings2);
+    }
+
+    await this.screenshot('debug-dashboard');
   }
 
   async expectAllSectionsVisible() {
-    // Wait for dashboard to fully load first
     await this.waitForDashboard();
 
-    // Check Products heading
     await expect(this.page.getByRole('heading', { name: 'Products' }))
       .toBeVisible({ timeout: 60000 });
-    console.log('✅ Products heading visible');
+    console.log('✅ Products visible');
 
-    // Check Orders heading
     await expect(this.page.getByRole('heading', { name: 'Orders' }))
       .toBeVisible({ timeout: 30000 });
-    console.log('✅ Orders heading visible');
+    console.log('✅ Orders visible');
 
-    // Check Delivery Rate heading
-    await expect(this.page.getByRole('heading', { name: 'Delivery Rate' }))
-      .toBeVisible({ timeout: 30000 });
-    console.log('✅ Delivery Rate heading visible');
-
-    // Check Cancel Rate heading
-    await expect(this.page.getByRole('heading', { name: 'Cancel Rate' }))
-      .toBeVisible({ timeout: 30000 });
-    console.log('✅ Cancel Rate heading visible');
-  }
-
-  async expectProductsSectionVisible() {
-    await this.page.waitForLoadState('networkidle', { timeout: 60000 });
-    await expect(this.page.getByRole('heading', { name: 'Products' }))
-      .toBeVisible({ timeout: 60000 });
-    console.log('✅ Products section visible');
-  }
-
-  async expectOrdersSectionVisible() {
-    await this.page.waitForLoadState('networkidle', { timeout: 60000 });
-    await expect(this.page.getByRole('heading', { name: 'Orders' }))
-      .toBeVisible({ timeout: 30000 });
-    console.log('✅ Orders section visible');
-  }
-
-  async expectDeliveryRateVisible() {
-    await this.page.waitForLoadState('networkidle', { timeout: 60000 });
     await expect(this.page.getByRole('heading', { name: 'Delivery Rate' }))
       .toBeVisible({ timeout: 30000 });
     console.log('✅ Delivery Rate visible');
-  }
 
-  async expectCancelRateVisible() {
-    await this.page.waitForLoadState('networkidle', { timeout: 60000 });
     await expect(this.page.getByRole('heading', { name: 'Cancel Rate' }))
       .toBeVisible({ timeout: 30000 });
     console.log('✅ Cancel Rate visible');
+  }
+
+  async expectProductsSectionVisible() {
+    await this.waitForDashboard();
+    await expect(this.page.getByRole('heading', { name: 'Products' }))
+      .toBeVisible({ timeout: 60000 });
+  }
+
+  async expectOrdersSectionVisible() {
+    await this.waitForDashboard();
+    await expect(this.page.getByRole('heading', { name: 'Orders' }))
+      .toBeVisible({ timeout: 30000 });
+  }
+
+  async expectDeliveryRateVisible() {
+    await this.waitForDashboard();
+    await expect(this.page.getByRole('heading', { name: 'Delivery Rate' }))
+      .toBeVisible({ timeout: 30000 });
+  }
+
+  async expectCancelRateVisible() {
+    await this.waitForDashboard();
+    await expect(this.page.getByRole('heading', { name: 'Cancel Rate' }))
+      .toBeVisible({ timeout: 30000 });
   }
 
   async getBodyText() {
@@ -83,9 +102,9 @@ export class DashboardPage {
         fullPage: true,
         timeout: 10000
       });
-      console.log(`📸 Screenshot saved: ${name}.png`);
+      console.log(`📸 Screenshot: ${name}.png`);
     } catch {
-      // screenshot failure must not abort the test
+      // ignore
     }
   }
 
