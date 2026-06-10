@@ -60,8 +60,12 @@ test.describe.configure({ mode: 'serial' });
 test('Step 1: Click New to create product', async () => {
   test.setTimeout(120000);
   await productListPage.expectTableVisible();
-  const pagination = await productListPage.getPaginationText();
-  console.log('Products before:', pagination);
+  try {
+    const pagination = await productListPage.getPaginationText();
+    console.log('Products before:', pagination);
+  } catch {
+    console.log('Products before: (empty list or pagination not visible)');
+  }
   await productListPage.clickNew();
   await productForm.expectFormVisible();
   try { await page.screenshot({ path: 'screenshots/pom-create-1-new.png', fullPage: true, timeout: 5000 }); } catch {}
