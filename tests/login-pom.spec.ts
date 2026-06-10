@@ -8,7 +8,6 @@ let loginPage: LoginPage;
 async function setupBrowser() {
   browser = await chromium.launch({
     headless: true,
-    channel: 'chrome',
     args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
   });
 

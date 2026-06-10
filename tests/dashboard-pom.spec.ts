@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import * as fs from 'fs';
 import { LoginPage } from '../pages/login.page';
 import { DashboardPage } from '../pages/dashboard.page';
 import { NavigationPage } from '../pages/navigation.page';
@@ -13,7 +14,9 @@ let productListPage: ProductListPage;
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(300000);
 
-  const context = await browser.newContext();
+  const context = await browser.newContext({
+    storageState: fs.existsSync('auth-state.json') ? 'auth-state.json' : undefined,
+  });
   page = await context.newPage();
 
   loginPage     = new LoginPage(page);
@@ -21,11 +24,16 @@ test.beforeAll(async ({ browser }) => {
   navPage       = new NavigationPage(page);
   productListPage = new ProductListPage(page);
 
-  const username = process.env.TEST_USERNAME || 'ashoaib';
-  const password = process.env.TEST_PASSWORD || 'test2';
-
-  console.log('🔐 Starting login...');
-  await loginPage.login(username, password);
+  if (!fs.existsSync('auth-state.json')) {
+    const username = process.env.TEST_USERNAME || 'ashoaib';
+    const password = process.env.TEST_PASSWORD || 'test2';
+    console.log('🔐 Starting login...');
+    await loginPage.login(username, password);
+  } else {
+    console.log('🔐 Using saved auth state...');
+    await page.goto(process.env.BASE_URL || 'https://stage.sellon.ch/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+  }
 
   // Login complete - now wait for dashboard to fully render
   console.log('⏳ Waiting for dashboard content...');

@@ -1,4 +1,5 @@
 import { test, expect, chromium, Page, Browser } from '@playwright/test';
+import * as fs from 'fs';
 import { LoginPage } from '../pages/login.page';
 import { NavigationPage } from '../pages/navigation.page';
 import { ProductListPage } from '../pages/product-list.page';
@@ -14,13 +15,13 @@ test.beforeAll(async () => {
 
   browser = await chromium.launch({
     headless: true,
-    channel: 'chrome',
     args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
   });
 
   const context = await browser.newContext({
     viewport: { width: 1920, height: 1080 },
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    storageState: fs.existsSync('auth-state.json') ? 'auth-state.json' : undefined,
   });
 
   page = await context.newPage();
@@ -28,7 +29,13 @@ test.beforeAll(async () => {
   navPage = new NavigationPage(page);
   productListPage = new ProductListPage(page);
 
-  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+  if (!fs.existsSync('auth-state.json')) {
+    await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+  } else {
+    await page.goto(process.env.BASE_URL || 'https://stage.sellon.ch/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+    await page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 90000 }).catch(() => {});
+  }
   await navPage.navigateToProducts();
   console.log('SETUP COMPLETE');
 });
