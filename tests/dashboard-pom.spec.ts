@@ -13,33 +13,46 @@ let productListPage: ProductListPage;
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(300000);
 
-  // Use storageState from playwright.config.ts (auth-state.json)
   const context = await browser.newContext();
-
   page = await context.newPage();
+
   loginPage = new LoginPage(page);
   dashboardPage = new DashboardPage(page);
   navPage = new NavigationPage(page);
   productListPage = new ProductListPage(page);
 
-  // Check if already logged in via storageState
   const baseURL = process.env.BASE_URL || 'https://stage.sellon.ch/';
+
+  console.log('Navigating to:', baseURL);
   await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(3000);
 
-  // Check if login page is shown
-  const isLoginPage = await page.locator('input[type="password"]').isVisible({ timeout: 5000 }).catch(() => false);
+  console.log('Current URL after goto:', page.url());
 
-  if (isLoginPage) {
-    console.log('Not logged in — logging in now...');
+  // Check if redirected to login page
+  const isLoginPage = await page.locator('button:has-text("Login")').isVisible({ timeout: 5000 }).catch(() => false);
+  const isLoginPage2 = await page.locator('input[type="password"]').isVisible({ timeout: 3000 }).catch(() => false);
+
+  if (isLoginPage || isLoginPage2) {
+    console.log('Login page detected — logging in...');
     await loginPage.login(
       process.env.TEST_USERNAME || 'ashoaib',
       process.env.TEST_PASSWORD || 'test2'
     );
-    console.log('LOGIN COMPLETE');
+
+    // Wait for dashboard to load after login
+    await page.waitForLoadState('networkidle', { timeout: 60000 });
+    await page.waitForTimeout(5000);
+
+    console.log('LOGIN COMPLETE ✅');
+    console.log('URL after login:', page.url());
   } else {
     console.log('Already logged in via auth-state.json ✅');
   }
+
+  // Log all headings for debugging
+  const headings = await page.getByRole('heading').allInnerTexts();
+  console.log('Headings on page after login:', headings);
 });
 
 test.afterAll(async () => {
@@ -215,7 +228,6 @@ test('Dashboard: should capture full dashboard content', async () => {
 
   const bodyText = await dashboardPage.getBodyText();
   console.log('DASHBOARD CONTENT (first 3000):', bodyText.substring(0, 3000));
-
   console.log('FULL DASHBOARD CAPTURED');
 });
 
@@ -389,10 +401,10 @@ test('Dashboard negative: incomplete products count should not exceed total', as
 
   const bodyText = await dashboardPage.getBodyText();
 
-  const totalMatch     = bodyText.match(/Total\s+(\d+)/);
-  const invalidMatch   = bodyText.match(/Invalid\s+(\d+)/);
+  const totalMatch      = bodyText.match(/Total\s+(\d+)/);
+  const invalidMatch    = bodyText.match(/Invalid\s+(\d+)/);
   const incompleteMatch = bodyText.match(/Incomplete\s+(\d+)/);
-  const completeMatch  = bodyText.match(/Complete\s+(\d+)/);
+  const completeMatch   = bodyText.match(/Complete\s+(\d+)/);
 
   const total      = totalMatch      ? parseInt(totalMatch[1])      : 0;
   const invalid    = invalidMatch    ? parseInt(invalidMatch[1])    : 0;
