@@ -50,6 +50,8 @@ jobs:
             file: tests/export-pom.spec.ts
           - test-suite: product-validations
             file: tests/product-validations-pom.spec.ts
+          - test-suite: order-workflow
+            file: tests/order-workflow-pom.spec.ts
 
     steps:
       - name: Checkout repository
