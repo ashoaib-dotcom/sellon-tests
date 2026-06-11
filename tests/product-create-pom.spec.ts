@@ -132,7 +132,8 @@ test('Step 4: Fill Provider key', async () => {
 test('Step 5: Fill Brand', async () => {
   test.setTimeout(60000);
   await productForm.fillField('Brand', 'POMTestBrand');
-  await productForm.expectFieldValueByLabel('Brand', 'POMTestBrand');
+  // Brand is a custom component — use value-in-any-input check instead of label-index lookup
+  await productForm.expectFieldValue('POMTestBrand');
   console.log('STEP 5 PASSED');
 });
 

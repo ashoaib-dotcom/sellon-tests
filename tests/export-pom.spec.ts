@@ -271,6 +271,18 @@ test('Export negative: products with Error state should not be in exported count
 test('Export negative: export dialog can be cancelled without exporting', async () => {
   test.setTimeout(60000);
 
+  // Return to the main app before navigating (prior test may have gone to an external URL)
+  try {
+    const menuIcon = page.locator('.menu-icon');
+    const visible = await menuIcon.isVisible({ timeout: 5000 });
+    if (!visible) {
+      await page.goto(process.env.BASE_URL || 'https://stage.sellon.ch/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await menuIcon.waitFor({ state: 'visible', timeout: 30000 });
+    }
+  } catch {
+    await page.goto(process.env.BASE_URL || 'https://stage.sellon.ch/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+  }
+
   // Navigate to products and try to open export, then cancel
   await navPage.navigateToProducts();
   await productListPage.expectTableVisible();
