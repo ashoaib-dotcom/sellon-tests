@@ -88,7 +88,10 @@ export class ProductFormPage {
         'input:not([type="hidden"]):not([type="checkbox"]), textarea'
       ).nth(idx);
       await input.fill(value);
-      await this.page.waitForTimeout(300);
+      await this.page.waitForTimeout(500);
+      // Press Escape to dismiss any open autocomplete dropdown without submitting the form
+      await this.page.keyboard.press('Escape');
+      await this.page.waitForTimeout(200);
       console.log(`  ${labelText} = "${value}" → OK`);
       return true;
     }
