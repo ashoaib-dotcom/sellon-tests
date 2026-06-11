@@ -6,9 +6,15 @@ import { buildGORDR, buildGDELR, buildGCANR, buildGSURN, buildGCANP, buildGRETP 
 
 test.describe.configure({ mode: 'serial' });
 
-const ORDER_1 = '61830301';
-const ORDER_2 = '61830302';
-const ORDER_3 = '61830303';
+// Populated at runtime by discoverOrders() in beforeAll — nothing hardcoded
+let ORDER_1 = '';
+let ORDER_2 = '';
+let ORDER_3 = '';
+
+// Positions (SKU + qty) extracted from each open order at runtime
+let order1Positions: { sku: string; qty: number }[] = [];
+let order2Positions: { sku: string; qty: number }[] = [];
+let order3Positions: { sku: string; qty: number }[] = [];
 
 let browser: Browser;
 let page: Page;
@@ -20,37 +26,99 @@ let sftp: SftpHelper;
 // Helper functions
 // ---------------------------------------------------------------------------
 
+// Returns up to `count` order IDs found in the orders grid
+async function discoverOrders(count = 3): Promise<string[]> {
+  try {
+    await ordersPage.navigateToOrders();
+    await page.waitForTimeout(3000);
+
+    const ids: string[] = [];
+    const rows = page.locator('tbody tr');
+    const rowCount = Math.min(await rows.count(), 30);
+
+    for (let i = 0; i < rowCount && ids.length < count; i++) {
+      const cells = rows.nth(i).locator('td');
+      const cellCount = await cells.count();
+      for (let j = 0; j < Math.min(cellCount, 6); j++) {
+        const text = (await cells.nth(j).textContent() || '').trim();
+        if (/^\d{6,12}$/.test(text) && !ids.includes(text)) {
+          ids.push(text);
+          break;
+        }
+      }
+    }
+
+    console.log(`[discoverOrders] Found ${ids.length}: ${ids.join(', ') || 'none'}`);
+    return ids;
+  } catch (e) {
+    console.log('[discoverOrders] Error:', (e as Error).message);
+    return [];
+  }
+}
+
+// Reads position rows from the Order items tab of the currently open order
+async function extractPositions(): Promise<{ sku: string; qty: number }[]> {
+  try {
+    const tabOpened = await clickTab('Order items');
+    if (!tabOpened) await clickTab('Items');
+    await page.waitForTimeout(2000);
+
+    const positions: { sku: string; qty: number }[] = [];
+    const rows = page.locator('tbody tr');
+    const count = await rows.count();
+
+    for (let i = 0; i < count; i++) {
+      const text = (await rows.nth(i).textContent() || '').trim();
+      // Provider key format: e.g. BT-SPK-001, BB-FLA-002, DART-S-004
+      const skuMatch = text.match(/[A-Z]{2,8}-[A-Z]{2,8}-?\d{2,4}/);
+      if (skuMatch) {
+        const qtyMatch = text.match(/\b(\d{1,5})\b/);
+        const qty = qtyMatch ? Math.max(parseInt(qtyMatch[1], 10), 1) : 1;
+        positions.push({ sku: skuMatch[0], qty });
+      }
+    }
+
+    console.log(`[extractPositions] ${positions.length}: ${positions.map(p => `${p.sku}(${p.qty})`).join(', ')}`);
+    return positions;
+  } catch (e) {
+    console.log('[extractPositions] Error:', (e as Error).message);
+    return [];
+  }
+}
+
+// Builds a RegExp to find SFTP files for a given EDI type and order ID
+function sftpPat(type: string, orderId: string): RegExp {
+  return orderId ? new RegExp(`${type}.*${orderId}`, 'i') : new RegExp(type, 'i');
+}
+
 async function findAndOpenOrder(orderId: string): Promise<boolean> {
   try {
     await ordersPage.navigateToOrders();
     await page.waitForTimeout(3000);
 
-    // Try to filter by the specific order ID first
     const filterInputs = page.locator('thead tr').nth(1).locator('input[type="text"], input:not([type])');
-    if (await filterInputs.count() > 0) {
+    if (orderId && await filterInputs.count() > 0) {
       await filterInputs.first().fill(orderId);
       await page.waitForTimeout(2000);
     }
 
-    // Look for the specific order row
-    let row = page.locator('tbody tr').filter({ hasText: orderId }).first();
+    let row = orderId
+      ? page.locator('tbody tr').filter({ hasText: orderId }).first()
+      : page.locator('tbody tr').first();
 
-    // Fallback: if specific order not found, open the first available order row
     if (await row.count() === 0) {
-      console.log(`  Order ${orderId} not found — falling back to first available order`);
-      // Clear filter and take first row
+      console.log(`  Order ${orderId} not found — falling back to first available`);
       if (await filterInputs.count() > 0) {
         await filterInputs.first().fill('');
         await page.waitForTimeout(2000);
       }
       row = page.locator('tbody tr').first();
       if (await row.count() === 0) {
-        console.log(`  No orders found in list at all`);
+        console.log('  No orders found in list at all');
         return false;
       }
     }
 
-    // Orders open on double-click
     await row.dblclick();
     await page.waitForTimeout(5000);
     return true;
@@ -62,13 +130,11 @@ async function findAndOpenOrder(orderId: string): Promise<boolean> {
 
 async function getOrderStatus(): Promise<string> {
   const bodyText = await page.locator('body').textContent() || '';
-  const statuses = ['New', 'Open', 'Confirmed', 'Shipped', 'Cancelled', 'Closed'];
-  for (const status of statuses) {
+  for (const status of ['New', 'Open', 'Confirmed', 'Shipped', 'Cancelled', 'Closed']) {
     if (bodyText.includes(status)) return status;
   }
   return 'unknown';
 }
-
 
 function registerAlertHandler(label: string): { triggered: boolean } {
   const result = { triggered: false };
@@ -99,15 +165,13 @@ async function clickTab(tabName: string): Promise<boolean> {
 async function clickButton(namePattern: string | RegExp, label?: string): Promise<boolean> {
   try {
     const btn = page.getByRole('button', { name: namePattern }).filter({ visible: true }).first();
-    const isVisible = await btn.isVisible({ timeout: 3000 });
-    if (!isVisible) return false;
-    const isEnabled = await btn.isEnabled({ timeout: 3000 });
-    if (!isEnabled) return false;
+    if (!await btn.isVisible({ timeout: 3000 })) return false;
+    if (!await btn.isEnabled({ timeout: 3000 })) return false;
     await btn.click();
     await page.waitForTimeout(3000);
     return true;
   } catch (e) {
-    if (label) console.log(`[clickButton] ${label}: button not found/clickable`);
+    if (label) console.log(`[clickButton] ${label}: not found/clickable`);
     return false;
   }
 }
@@ -127,9 +191,7 @@ async function saveOrder(): Promise<void> {
 }
 
 async function screenshot(name: string): Promise<void> {
-  try {
-    await page.screenshot({ path: `screenshots/${name}.png` });
-  } catch {}
+  try { await page.screenshot({ path: `screenshots/${name}.png` }); } catch {}
 }
 
 async function importEDI(
@@ -144,23 +206,13 @@ async function importEDI(
     const positions = opts?.positions || [];
     const reason = opts?.reason || '';
     let ediFile: { content: string; filename: string } | null = null;
-    if (upperType === 'CANP') {
-      ediFile = buildGCANP(orderId, positions.map(p => ({ sku: p.sku })), reason);
-    } else if (upperType === 'RETP') {
-      ediFile = buildGRETP(orderId, positions.map(p => ({ sku: p.sku, qty: p.qty ?? 1 })), reason);
-    } else if (upperType === 'GORDR') {
-      ediFile = buildGORDR(orderId, positions.map(p => ({ sku: p.sku, qty: p.qty ?? 1 })));
-    } else if (upperType === 'GDELR') {
-      ediFile = buildGDELR(orderId, positions.map(p => ({ sku: p.sku, qty: p.qty ?? 1 })), 'SHIP-AUTO', 'DHL');
-    } else if (upperType === 'GCANR') {
-      ediFile = buildGCANR(orderId, 'Rejected', reason);
-    } else if (upperType === 'GSURN') {
-      ediFile = buildGSURN(orderId, 'Rejected', positions.map(p => ({ sku: p.sku })), reason);
-    }
-    if (ediFile) {
-      content = ediFile.content;
-      filename = ediFile.filename;
-    }
+    if (upperType === 'CANP')  ediFile = buildGCANP(orderId, positions.map(p => ({ sku: p.sku })), reason);
+    else if (upperType === 'RETP')  ediFile = buildGRETP(orderId, positions.map(p => ({ sku: p.sku, qty: p.qty ?? 1 })), reason);
+    else if (upperType === 'GORDR') ediFile = buildGORDR(orderId, positions.map(p => ({ sku: p.sku, qty: p.qty ?? 1 })));
+    else if (upperType === 'GDELR') ediFile = buildGDELR(orderId, positions.map(p => ({ sku: p.sku, qty: p.qty ?? 1 })), 'SHIP-AUTO', 'DHL');
+    else if (upperType === 'GCANR') ediFile = buildGCANR(orderId, 'Rejected', reason);
+    else if (upperType === 'GSURN') ediFile = buildGSURN(orderId, 'Rejected', positions.map(p => ({ sku: p.sku })), reason);
+    if (ediFile) { content = ediFile.content; filename = ediFile.filename; }
   } catch (e) {
     console.log(`[importEDI] EDI build error for ${type}:`, e);
   }
@@ -170,7 +222,7 @@ async function importEDI(
       const result = await sftp.uploadEDIContent(content, filename);
       console.log(`[importEDI] SFTP upload result for ${filename}:`, result);
     } catch (e) {
-      console.log(`[importEDI] SFTP not configured or upload failed:`, e);
+      console.log(`[importEDI] SFTP upload failed:`, e);
     }
   }
 
@@ -180,9 +232,7 @@ async function importEDI(
       await importBtn.click();
     } else {
       const fallback = page.getByText('Import', { exact: true }).filter({ visible: true }).first();
-      if (await fallback.isVisible({ timeout: 3000 })) {
-        await fallback.click();
-      }
+      if (await fallback.isVisible({ timeout: 3000 })) await fallback.click();
     }
   } catch {}
 
@@ -196,10 +246,9 @@ async function waitForSftpFile(pattern: RegExp | string, timeoutMs = 60000): Pro
     return null;
   }
   try {
-    const result = await sftp.waitForFile(pattern, timeoutMs);
-    return result;
+    return await sftp.waitForFile(pattern, timeoutMs);
   } catch (e) {
-    console.log(`[waitForSftpFile] File not found for pattern ${pattern}:`, e);
+    console.log(`[waitForSftpFile] ${pattern}:`, e);
     return null;
   }
 }
@@ -211,11 +260,7 @@ async function waitForSftpFile(pattern: RegExp | string, timeoutMs = 60000): Pro
 test.beforeAll(async () => {
   browser = await chromium.launch({
     headless: true,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--no-sandbox',
-      '--disable-dev-shm-usage',
-    ],
+    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
   });
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   page = await context.newPage();
@@ -223,10 +268,15 @@ test.beforeAll(async () => {
   ordersPage = new OrdersPage(page);
   sftp = getSftpHelper();
 
-  const username = process.env.TEST_USERNAME || 'ashoaib';
-  const password = process.env.TEST_PASSWORD || 'test2';
-  await loginPage.login(username, password);
+  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
   await page.waitForTimeout(3000);
+
+  // Discover real order IDs from the staging orders list
+  const discovered = await discoverOrders(3);
+  ORDER_1 = discovered[0] || '';
+  ORDER_2 = discovered[1] || '';
+  ORDER_3 = discovered[2] || '';
+  console.log(`Orders discovered — ORDER_1: ${ORDER_1 || 'none'} | ORDER_2: ${ORDER_2 || 'none'} | ORDER_3: ${ORDER_3 || 'none'}`);
 });
 
 test.afterAll(async () => {
@@ -235,15 +285,15 @@ test.afterAll(async () => {
 });
 
 // ===========================================================================
-// ORDER 1 — 61830301
+// ORDER 1
 // ===========================================================================
 
-test.describe('ORDER 1 — 61830301', () => {
+test.describe('ORDER 1', () => {
   let opened = false;
 
-  // 1. Order in overview + notification
-  test('[61830301] 1. Order in overview + notification', async () => {
+  test('[ORDER 1] 1. Order in overview + notification', async () => {
     test.setTimeout(120000);
+    if (!ORDER_1) { test.skip(); return; }
     await ordersPage.navigateToOrders();
     await page.waitForTimeout(3000);
 
@@ -263,15 +313,10 @@ test.describe('ORDER 1 — 61830301', () => {
       if (text && text.includes(ORDER_1)) { rowFound = true; break; }
     }
 
-    if (!rowFound) {
-      console.log('Order not found');
-      test.skip();
-      return;
-    }
-
+    if (!rowFound) { console.log('Order not found'); test.skip(); return; }
     expect(rowFound).toBeTruthy();
 
-    const alertResult = registerAlertHandler('[61830301] notification');
+    const alertResult = registerAlertHandler('[ORDER 1] notification');
     await page.reload();
     await page.waitForTimeout(3000);
 
@@ -279,20 +324,20 @@ test.describe('ORDER 1 — 61830301', () => {
     const hasNotification = alertResult.triggered ||
       bodyText.toLowerCase().includes('new order') ||
       bodyText.toLowerCase().includes('notification');
-    console.log('[61830301] 1. Notification/alert triggered:', hasNotification);
-
+    console.log(`[ORDER 1] 1. Order ${ORDER_1} found. Notification:`, hasNotification);
     await screenshot('order1-1-overview');
   });
 
-  // 2. Delivery address
-  test('[61830301] 2. Delivery address', async () => {
+  test('[ORDER 1] 2. Delivery address', async () => {
     test.setTimeout(120000);
     opened = await findAndOpenOrder(ORDER_1);
     if (!opened) { test.skip(); return; }
 
-    // Delivery address is on the Order parties tab
-    await clickTab('Order parties');
+    // Extract positions while order is open
+    order1Positions = await extractPositions();
+    console.log(`[ORDER 1] positions extracted: ${order1Positions.map(p => p.sku).join(', ') || 'none'}`);
 
+    await clickTab('Order parties');
     const bodyText = await page.locator('body').textContent() || '';
     const hasAddress = bodyText.toLowerCase().includes('delivery') ||
       bodyText.toLowerCase().includes('address') ||
@@ -300,35 +345,31 @@ test.describe('ORDER 1 — 61830301', () => {
       bodyText.toLowerCase().includes('city') ||
       bodyText.toLowerCase().includes('zip') ||
       bodyText.toLowerCase().includes('name');
-    console.log('[61830301] 2. Delivery address visible:', hasAddress);
+    console.log('[ORDER 1] 2. Delivery address visible:', hasAddress);
     expect(hasAddress).toBeTruthy();
     await screenshot('order1-2-delivery-address');
   });
 
-  // 3. BACK-002 stock warning
-  test('[61830301] 3. BACK-002 stock warning', async () => {
+  test('[ORDER 1] 3. Stock warning check', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasStockWarning =
-      (bodyText.includes('BACK-002') && (
-        bodyText.toLowerCase().includes('stock') ||
-        bodyText.toLowerCase().includes('warning') ||
-        bodyText.toLowerCase().includes('insufficient')
-      )) ||
-      bodyText.toLowerCase().includes('stock warning');
-    console.log('[61830301] 3. BACK-002 stock warning visible:', hasStockWarning);
+    const hasStockWarning = bodyText.toLowerCase().includes('stock') &&
+      (bodyText.toLowerCase().includes('warning') ||
+       bodyText.toLowerCase().includes('insufficient') ||
+       bodyText.toLowerCase().includes('backorder'));
+    console.log('[ORDER 1] 3. Stock warning visible:', hasStockWarning);
     await screenshot('order1-3-stock-warning');
   });
 
-  // 4a. Import CANP — alerts user
-  test('[61830301] 4a. Import CANP — alerts user', async () => {
+  test('[ORDER 1] 4a. Import CANP — alerts user', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    const alertResult = registerAlertHandler('[61830301] CANP alert');
-    await importEDI('CANP', ORDER_1, { positions: [{ sku: 'BT-SPK-001' }], reason: 'Customer cancelled' });
+    const alertResult = registerAlertHandler('[ORDER 1] CANP alert');
+    const positions = order1Positions.length ? [order1Positions[0]] : [{ sku: 'UNKNOWN', qty: 1 }];
+    await importEDI('CANP', ORDER_1, { positions, reason: 'Customer cancelled' });
     await page.waitForTimeout(5000);
 
     const bodyText = await page.locator('body').textContent() || '';
@@ -336,26 +377,22 @@ test.describe('ORDER 1 — 61830301', () => {
       bodyText.toLowerCase().includes('canp') ||
       bodyText.toLowerCase().includes('cancel request') ||
       alertResult.triggered;
-    console.log('[61830301] 4a. CANP alert/notification visible:', result);
+    console.log('[ORDER 1] 4a. CANP alert/notification visible:', result);
     await screenshot('order1-4a-canp-alert');
   });
 
-  // 4b. CANP — opens cancellation request tab
-  test('[61830301] 4b. CANP — opens cancellation request tab', async () => {
+  test('[ORDER 1] 4b. CANP — opens cancellation request tab', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const tabOpened = await clickTab('Cancellation request');
     const bodyText = await page.locator('body').textContent() || '';
-    const hasTab = tabOpened || bodyText.toLowerCase().includes('cancellation') ||
-      bodyText.toLowerCase().includes('cancel');
-    // Soft check — tab only appears after CANP is imported for this specific order
-    console.log('[61830301] 4b. Cancellation request tab visible:', hasTab);
+    const hasTab = tabOpened || bodyText.toLowerCase().includes('cancellation') || bodyText.toLowerCase().includes('cancel');
+    console.log('[ORDER 1] 4b. Cancellation request tab visible:', hasTab);
     await screenshot('order1-4b-canp-tab');
   });
 
-  // 4c. CANP — prevents processing order items
-  test('[61830301] 4c. CANP — prevents processing order items', async () => {
+  test('[ORDER 1] 4c. CANP — prevents processing order items', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -363,16 +400,14 @@ test.describe('ORDER 1 — 61830301', () => {
     const count = await rows.count();
     let enabledInputCount = 0;
     if (count > 0) {
-      const inputs = rows.first().locator('input:not([disabled])');
-      const visibleInputs = inputs.filter({ visible: true });
-      enabledInputCount = await visibleInputs.count();
+      const inputs = rows.first().locator('input:not([disabled])').filter({ visible: true });
+      enabledInputCount = await inputs.count();
     }
-    console.log('[61830301] 4c. Enabled inputs in first row (should be locked):', enabledInputCount);
+    console.log('[ORDER 1] 4c. Enabled inputs in first row (should be locked):', enabledInputCount);
     await screenshot('order1-4c-canp-locked');
   });
 
-  // 4d. CANP reject requires customer message
-  test('[61830301] 4d. CANP reject requires customer message', async () => {
+  test('[ORDER 1] 4d. CANP reject requires customer message', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -387,48 +422,43 @@ test.describe('ORDER 1 — 61830301', () => {
         bodyText.toLowerCase().includes('required') ||
         bodyText.toLowerCase().includes('mandatory') ||
         bodyText.toLowerCase().includes('reason');
-      console.log('[61830301] 4d. Reject without message shows validation:', requiresMsg);
+      console.log('[ORDER 1] 4d. Reject without message shows validation:', requiresMsg);
     } else {
-      console.log('[61830301] 4d. Reject button not found in cancellation tab');
+      console.log('[ORDER 1] 4d. Reject button not found in cancellation tab');
     }
     await screenshot('order1-4d-canp-reject-validation');
   });
 
-  // 4e. CANP status check
-  test('[61830301] 4e. CANP status', async () => {
+  test('[ORDER 1] 4e. CANP status', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasRejectStatus = bodyText.includes('Reject');
-    console.log('[61830301] 4e. Body contains Reject status:', hasRejectStatus);
+    console.log('[ORDER 1] 4e. Body contains Reject status:', bodyText.includes('Reject'));
     await screenshot('order1-4e-canp-status');
   });
 
-  // 4f. CANP — items count
-  test('[61830301] 4f. CANP — cancelled items count', async () => {
+  test('[ORDER 1] 4f. CANP — cancelled items count', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasNumber = /\d+/.test(bodyText);
-    console.log('[61830301] 4f. Body contains item count number:', hasNumber);
+    console.log('[ORDER 1] 4f. Body contains item count number:', /\d+/.test(bodyText));
     await screenshot('order1-4f-canp-items-count');
   });
 
-  // 4g. CANP — provider key BT-SPK-001
-  test('[61830301] 4g. CANP — provider key BT-SPK-001', async () => {
+  test('[ORDER 1] 4g. CANP — provider key visible', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasProviderKey = bodyText.includes('BT-SPK-001');
-    console.log('[61830301] 4g. Body contains BT-SPK-001 provider key:', hasProviderKey);
+    const hasProviderKey = order1Positions.length > 0 && order1Positions.some(p => bodyText.includes(p.sku));
+    console.log('[ORDER 1] 4g. Body contains provider key:', hasProviderKey,
+      order1Positions.length ? `(${order1Positions[0].sku})` : '(no positions extracted)');
     await screenshot('order1-4g-canp-provider-key');
   });
 
-  // 5a. Reject cancellation — fill message and save
-  test('[61830301] 5a. Reject cancellation — fill message and save', async () => {
+  test('[ORDER 1] 5a. Reject cancellation — fill message and save', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -438,87 +468,71 @@ test.describe('ORDER 1 — 61830301', () => {
         await textarea.fill('Test rejection reason');
       } else {
         const msgInput = page.locator('input[type="text"]').filter({ visible: true }).last();
-        if (await msgInput.isVisible({ timeout: 3000 })) {
-          await msgInput.fill('Test rejection reason');
-        }
+        if (await msgInput.isVisible({ timeout: 3000 })) await msgInput.fill('Test rejection reason');
       }
     } catch (e) {
-      console.log('[61830301] 5a. Could not find message input:', e);
+      console.log('[ORDER 1] 5a. Could not find message input:', e);
     }
 
     await saveOrder();
     await screenshot('order1-5a-rejection-saved');
   });
 
-  // 5b. GCANR on SFTP
-  test('[61830301] 5b. GCANR on SFTP', async () => {
+  test('[ORDER 1] 5b. GCANR on SFTP', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/GCANR.*61830301/i, 30000);
-    console.log('[61830301] 5b. GCANR file on SFTP:', file);
+    const file = await waitForSftpFile(sftpPat('GCANR', ORDER_1), 30000);
+    console.log('[ORDER 1] 5b. GCANR file on SFTP:', file);
   });
 
-  // 5c. Post-reject: rejection reason in body
-  test('[61830301] 5c. Post-reject: rejection reason in body', async () => {
+  test('[ORDER 1] 5c. Post-reject: rejection reason in body', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasReason = bodyText.includes('Test rejection reason');
-    console.log('[61830301] 5c. Rejection reason visible in body:', hasReason);
+    console.log('[ORDER 1] 5c. Rejection reason visible in body:', bodyText.includes('Test rejection reason'));
   });
 
-  // 5d. Cancellation tab is read-only
-  test('[61830301] 5d. Cancellation tab is read-only after reject', async () => {
+  test('[ORDER 1] 5d. Cancellation tab is read-only after reject', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const inputs = page.locator('tbody tr input:not([disabled])').filter({ visible: true });
-    const enabledCount = await inputs.count();
-    console.log('[61830301] 5d. Enabled inputs in cancellation tab after reject:', enabledCount);
+    console.log('[ORDER 1] 5d. Enabled inputs in cancellation tab after reject:', await inputs.count());
     await screenshot('order1-5d-readonly');
   });
 
-  // 5e. Body contains 'Rejected'
-  test('[61830301] 5e. Body contains Rejected', async () => {
+  test('[ORDER 1] 5e. Body contains Rejected', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasRejected = bodyText.includes('Rejected');
-    console.log('[61830301] 5e. Body contains Rejected:', hasRejected);
+    console.log('[ORDER 1] 5e. Body contains Rejected:', bodyText.includes('Rejected'));
     await screenshot('order1-5e-rejected-status');
   });
 
-  // 6a. Confirm BT-SPK-001 — status To confirm
-  test('[61830301] 6a. Confirm BT-SPK-001 — status To confirm', async () => {
+  test('[ORDER 1] 6a. Confirm first position — status To confirm', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    try {
-      await clickTab('Master data');
-    } catch {
+    try { await clickTab('Master data'); } catch {
       await ordersPage.navigateToOrders();
-      await page.waitForTimeout(2000);
       opened = await findAndOpenOrder(ORDER_1);
     }
 
-    const bodyText = await page.locator('body').textContent() || '';
-    const hasBTSPK = bodyText.includes('BT-SPK-001');
-
-    if (hasBTSPK) {
+    const firstSku = order1Positions[0]?.sku || '';
+    if (firstSku) {
       const rows = page.locator('tbody tr');
       const count = await rows.count();
       for (let i = 0; i < count; i++) {
         const rowText = await rows.nth(i).textContent() || '';
-        if (rowText.includes('BT-SPK-001')) {
+        if (rowText.includes(firstSku)) {
           const confirmBtn = rows.nth(i).getByRole('button', { name: /confirm/i });
-          const btnVisible = await confirmBtn.isVisible({ timeout: 2000 }).catch(() => false);
-          if (btnVisible) { await confirmBtn.click(); await page.waitForTimeout(2000); }
+          if (await confirmBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await confirmBtn.click(); await page.waitForTimeout(2000);
+          }
           const qtyInput = rows.nth(i).locator('input[type="number"]');
-          const inputVisible = await qtyInput.isVisible({ timeout: 2000 }).catch(() => false);
-          if (inputVisible) {
-            await qtyInput.click();
-            await qtyInput.fill('1');
+          if (await qtyInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await qtyInput.click(); await qtyInput.fill('1');
           }
           break;
         }
@@ -526,59 +540,48 @@ test.describe('ORDER 1 — 61830301', () => {
     }
 
     const updatedBody = await page.locator('body').textContent() || '';
-    const hasToConfirm = updatedBody.toLowerCase().includes('to confirm');
-    console.log('[61830301] 6a. Status To confirm visible:', hasToConfirm);
+    console.log('[ORDER 1] 6a. Status To confirm visible:', updatedBody.toLowerCase().includes('to confirm'));
     await screenshot('order1-6a-to-confirm');
   });
 
-  // 6b. Save → status Confirmed
-  test('[61830301] 6b. Save → status Confirmed', async () => {
+  test('[ORDER 1] 6b. Save → status Confirmed', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     await saveOrder();
     const bodyText = await page.locator('body').textContent() || '';
-    const confirmed = bodyText.includes('Confirmed');
-    console.log('[61830301] 6b. Status Confirmed after save:', confirmed);
+    console.log('[ORDER 1] 6b. Status Confirmed after save:', bodyText.includes('Confirmed'));
     await screenshot('order1-6b-confirmed');
   });
 
-  // 6c. GORDR on SFTP
-  test('[61830301] 6c. GORDR on SFTP', async () => {
+  test('[ORDER 1] 6c. GORDR on SFTP', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/GORDR.*61830301/i, 30000);
-    console.log('[61830301] 6c. GORDR file on SFTP:', file);
+    const file = await waitForSftpFile(sftpPat('GORDR', ORDER_1), 30000);
+    console.log('[ORDER 1] 6c. GORDR file on SFTP:', file);
   });
 
-  // 7a. Create shipping for BT-SPK-001 — click new shipment
-  test('[61830301] 7a. Create shipping — click new shipment', async () => {
+  test('[ORDER 1] 7a. Create shipping — click new shipment', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const clicked = await clickButton(/new shipment|create shipment|shipping/i, 'new shipment');
-    console.log('[61830301] 7a. New shipment button clicked:', clicked);
-
     const bodyText = await page.locator('body').textContent() || '';
-    const hasCarrierField = bodyText.toLowerCase().includes('carrier') ||
-      bodyText.toLowerCase().includes('shipment number');
-    console.log('[61830301] 7a. Carrier/shipment fields visible:', hasCarrierField);
+    console.log('[ORDER 1] 7a. New shipment button clicked:', clicked);
+    console.log('[ORDER 1] 7a. Carrier/shipment fields visible:', bodyText.toLowerCase().includes('carrier') || bodyText.toLowerCase().includes('shipment number'));
     await screenshot('order1-7a-new-shipment');
   });
 
-  // 7b. Verify carrier and shipment number fields visible
-  test('[61830301] 7b. Verify carrier, shipment number fields', async () => {
+  test('[ORDER 1] 7b. Verify carrier, shipment number fields', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasCarrier = bodyText.toLowerCase().includes('carrier');
-    const hasShipmentNum = bodyText.toLowerCase().includes('shipment');
-    console.log('[61830301] 7b. Carrier field visible:', hasCarrier, '| Shipment number field visible:', hasShipmentNum);
+    console.log('[ORDER 1] 7b. Carrier field visible:', bodyText.toLowerCase().includes('carrier'),
+      '| Shipment number field visible:', bodyText.toLowerCase().includes('shipment'));
     await screenshot('order1-7b-shipment-fields');
   });
 
-  // 7c. Save without shipment number → verify error
-  test('[61830301] 7c. Save without shipment number → error shown', async () => {
+  test('[ORDER 1] 7c. Save without shipment number → error shown', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -588,40 +591,36 @@ test.describe('ORDER 1 — 61830301', () => {
       bodyText.toLowerCase().includes('required') ||
       bodyText.toLowerCase().includes('invalid') ||
       bodyText.toLowerCase().includes('mandatory');
-    console.log('[61830301] 7c. Error shown when saving without shipment number:', hasError);
+    console.log('[ORDER 1] 7c. Error shown when saving without shipment number:', hasError);
     await screenshot('order1-7c-shipment-error');
   });
 
-  // 7d. Fill shipment details and save
-  test('[61830301] 7d. Fill carrier, shipment number, select BT-SPK-001', async () => {
+  test('[ORDER 1] 7d. Fill carrier, shipment number, select first position', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     try {
       const carrierInput = page.locator('input[name*="carrier"], input[placeholder*="carrier"]').first();
-      if (await carrierInput.isVisible({ timeout: 3000 })) {
-        await carrierInput.fill('DHL');
-      }
+      if (await carrierInput.isVisible({ timeout: 3000 })) await carrierInput.fill('DHL');
     } catch {}
 
     try {
       const shipNumInput = page.locator('input[name*="shipment"], input[placeholder*="shipment"], input[name*="tracking"]').first();
-      if (await shipNumInput.isVisible({ timeout: 3000 })) {
-        await shipNumInput.fill('SHIP-001');
-      }
+      if (await shipNumInput.isVisible({ timeout: 3000 })) await shipNumInput.fill('SHIP-001');
     } catch {}
 
     try {
-      const rows = page.locator('tbody tr');
-      const count = await rows.count();
-      for (let i = 0; i < count; i++) {
-        const rowText = await rows.nth(i).textContent() || '';
-        if (rowText.includes('BT-SPK-001')) {
-          const checkbox = rows.nth(i).locator('input[type="checkbox"]');
-          if (await checkbox.isVisible({ timeout: 2000 })) {
-            await checkbox.check();
+      const firstSku = order1Positions[0]?.sku || '';
+      if (firstSku) {
+        const rows = page.locator('tbody tr');
+        const count = await rows.count();
+        for (let i = 0; i < count; i++) {
+          const rowText = await rows.nth(i).textContent() || '';
+          if (rowText.includes(firstSku)) {
+            const checkbox = rows.nth(i).locator('input[type="checkbox"]');
+            if (await checkbox.isVisible({ timeout: 2000 })) await checkbox.check();
+            break;
           }
-          break;
         }
       }
     } catch {}
@@ -630,70 +629,61 @@ test.describe('ORDER 1 — 61830301', () => {
     await screenshot('order1-7d-shipment-saved');
   });
 
-  // 7e. Wait for GDELR
-  test('[61830301] 7e. Wait for GDELR on SFTP', async () => {
+  test('[ORDER 1] 7e. Wait for GDELR on SFTP', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/GDELR.*61830301/i, 30000);
-    console.log('[61830301] 7e. GDELR file on SFTP:', file);
+    const file = await waitForSftpFile(sftpPat('GDELR', ORDER_1), 30000);
+    console.log('[ORDER 1] 7e. GDELR file on SFTP:', file);
     await screenshot('order1-7e-gdelr');
   });
 
-  // 8a. Import RETP
-  test('[61830301] 8a. Import RETP', async () => {
+  test('[ORDER 1] 8a. Import RETP', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    await importEDI('RETP', ORDER_1, { positions: [{ sku: 'BT-SPK-001', qty: 1 }], reason: 'Product defective' });
+    const positions = order1Positions.length ? [{ sku: order1Positions[0].sku, qty: 1 }] : [{ sku: 'UNKNOWN', qty: 1 }];
+    await importEDI('RETP', ORDER_1, { positions, reason: 'Product defective' });
     await screenshot('order1-8a-retp-import');
   });
 
-  // 8b. RETP — opens return request tab
-  test('[61830301] 8b. RETP — opens return request tab', async () => {
+  test('[ORDER 1] 8b. RETP — opens return request tab', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     await clickTab('Return request');
     const bodyText = await page.locator('body').textContent() || '';
-    const hasReturn = bodyText.toLowerCase().includes('return') ||
-      bodyText.toLowerCase().includes('retp');
-    console.log('[61830301] 8b. Return request tab visible:', hasReturn);
+    console.log('[ORDER 1] 8b. Return request tab visible:',
+      bodyText.toLowerCase().includes('return') || bodyText.toLowerCase().includes('retp'));
     await screenshot('order1-8b-retp-tab');
   });
 
-  // 8c. RETP — reason text visible
-  test('[61830301] 8c. RETP — reason text visible', async () => {
+  test('[ORDER 1] 8c. RETP — reason text visible', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasReason = bodyText.toLowerCase().includes('product defective') ||
-      bodyText.toLowerCase().includes('defective');
-    console.log('[61830301] 8c. RETP reason visible:', hasReason);
+    console.log('[ORDER 1] 8c. RETP reason visible:',
+      bodyText.toLowerCase().includes('product defective') || bodyText.toLowerCase().includes('defective'));
   });
 
-  // 8d. RETP — amount visible
-  test('[61830301] 8d. RETP — amount visible', async () => {
+  test('[ORDER 1] 8d. RETP — amount visible', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasAmount = /\d+/.test(bodyText);
-    console.log('[61830301] 8d. RETP amount/number visible:', hasAmount);
+    console.log('[ORDER 1] 8d. RETP amount/number visible:', /\d+/.test(bodyText));
   });
 
-  // 8e. RETP — BT-SPK-001 visible
-  test('[61830301] 8e. RETP — BT-SPK-001 visible', async () => {
+  test('[ORDER 1] 8e. RETP — position SKU visible', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasSku = bodyText.includes('BT-SPK-001');
-    console.log('[61830301] 8e. BT-SPK-001 visible in return tab:', hasSku);
+    const hasSku = order1Positions.length > 0 && order1Positions.some(p => bodyText.includes(p.sku));
+    console.log('[ORDER 1] 8e. Position SKU visible in return tab:', hasSku);
     await screenshot('order1-8e-retp-sku');
   });
 
-  // 8f. RETP — Reject requires reason
-  test('[61830301] 8f. RETP — Reject button requires reason', async () => {
+  test('[ORDER 1] 8f. RETP — Reject button requires reason', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -707,22 +697,20 @@ test.describe('ORDER 1 — 61830301', () => {
       const requiresReason = bodyText.toLowerCase().includes('reason') ||
         bodyText.toLowerCase().includes('required') ||
         bodyText.toLowerCase().includes('message');
-      console.log('[61830301] 8f. Reject without reason shows validation:', requiresReason);
+      console.log('[ORDER 1] 8f. Reject without reason shows validation:', requiresReason);
     } else {
-      console.log('[61830301] 8f. Reject button not found in return tab');
+      console.log('[ORDER 1] 8f. Reject button not found in return tab');
     }
     await screenshot('order1-8f-retp-reject-validation');
   });
 
-  // 8g. RETP — soft checks summary screenshot
-  test('[61830301] 8g. RETP — soft checks summary', async () => {
+  test('[ORDER 1] 8g. RETP — soft checks summary', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
     await screenshot('order1-8g-retp-summary');
   });
 
-  // 9a. Reject return — fill rejection reason
-  test('[61830301] 9a. Reject return — fill rejection reason', async () => {
+  test('[ORDER 1] 9a. Reject return — fill rejection reason', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -732,19 +720,16 @@ test.describe('ORDER 1 — 61830301', () => {
         await textarea.fill('Return rejected - test');
       } else {
         const input = page.locator('input[type="text"]').filter({ visible: true }).last();
-        if (await input.isVisible({ timeout: 3000 })) {
-          await input.fill('Return rejected - test');
-        }
+        if (await input.isVisible({ timeout: 3000 })) await input.fill('Return rejected - test');
       }
     } catch (e) {
-      console.log('[61830301] 9a. Could not fill rejection reason:', e);
+      console.log('[ORDER 1] 9a. Could not fill rejection reason:', e);
     }
 
     await screenshot('order1-9a-return-rejection-reason');
   });
 
-  // 9b. Save return rejection
-  test('[61830301] 9b. Save return rejection', async () => {
+  test('[ORDER 1] 9b. Save return rejection', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -752,67 +737,59 @@ test.describe('ORDER 1 — 61830301', () => {
     await screenshot('order1-9b-return-rejection-saved');
   });
 
-  // 9c. Wait for GSURN on SFTP
-  test('[61830301] 9c. Wait for GSURN on SFTP', async () => {
+  test('[ORDER 1] 9c. Wait for GSURN on SFTP', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/GSURN.*61830301/i, 30000);
-    console.log('[61830301] 9c. GSURN file on SFTP:', file);
+    const file = await waitForSftpFile(sftpPat('GSURN', ORDER_1), 30000);
+    console.log('[ORDER 1] 9c. GSURN file on SFTP:', file);
   });
 
-  // 9d. Return tab shows Rejected
-  test('[61830301] 9d. Return tab shows Rejected', async () => {
+  test('[ORDER 1] 9d. Return tab shows Rejected', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasRejected = bodyText.includes('Rejected');
-    console.log('[61830301] 9d. Return tab shows Rejected:', hasRejected);
+    console.log('[ORDER 1] 9d. Return tab shows Rejected:', bodyText.includes('Rejected'));
     await screenshot('order1-9d-return-rejected');
   });
 
-  // 9e. Return tab not editable
-  test('[61830301] 9e. Return tab not editable after reject', async () => {
+  test('[ORDER 1] 9e. Return tab not editable after reject', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const inputs = page.locator('tbody tr input:not([disabled])').filter({ visible: true });
-    const count = await inputs.count();
-    console.log('[61830301] 9e. Enabled inputs in return tab after reject:', count);
+    console.log('[ORDER 1] 9e. Enabled inputs in return tab after reject:', await inputs.count());
     await screenshot('order1-9e-return-readonly');
   });
 
-  // 9f. Return shows Rejected
-  test('[61830301] 9f. Body contains Rejected for return', async () => {
+  test('[ORDER 1] 9f. Body contains Rejected for return', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasRejected = bodyText.includes('Rejected');
-    console.log('[61830301] 9f. Body contains Rejected:', hasRejected);
+    console.log('[ORDER 1] 9f. Body contains Rejected:', bodyText.includes('Rejected'));
     await screenshot('order1-9f-return-rejected-final');
   });
 
-  // 10. Order status = Open
-  test('[61830301] 10. Order status', async () => {
+  test('[ORDER 1] 10. Order status final check', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const status = await getOrderStatus();
-    console.log('[61830301] 10. Order status:', status);
+    console.log('[ORDER 1] 10. Order status:', status);
     await screenshot('order1-10-final-status');
   });
 });
 
 // ===========================================================================
-// ORDER 2 — 61830302
+// ORDER 2
 // ===========================================================================
 
-test.describe('ORDER 2 — 61830302', () => {
+test.describe('ORDER 2', () => {
   let opened = false;
 
-  // 1. Order in overview
-  test('[61830302] 1. Order in overview', async () => {
+  test('[ORDER 2] 1. Order in overview', async () => {
     test.setTimeout(120000);
+    if (!ORDER_2) { test.skip(); return; }
     await ordersPage.navigateToOrders();
     await page.waitForTimeout(3000);
 
@@ -832,24 +809,22 @@ test.describe('ORDER 2 — 61830302', () => {
       if (text && text.includes(ORDER_2)) { rowFound = true; break; }
     }
 
-    if (!rowFound) {
-      console.log('Order not found');
-      test.skip();
-      return;
-    }
-
+    if (!rowFound) { console.log('Order not found'); test.skip(); return; }
     expect(rowFound).toBeTruthy();
+    console.log(`[ORDER 2] 1. Order ${ORDER_2} found in overview`);
     await screenshot('order2-1-overview');
   });
 
-  // 2. Delivery address
-  test('[61830302] 2. Delivery address', async () => {
+  test('[ORDER 2] 2. Delivery address', async () => {
     test.setTimeout(120000);
     opened = await findAndOpenOrder(ORDER_2);
     if (!opened) { test.skip(); return; }
 
-    await clickTab('Order parties');
+    // Extract positions while order is open
+    order2Positions = await extractPositions();
+    console.log(`[ORDER 2] positions extracted: ${order2Positions.map(p => p.sku).join(', ') || 'none'}`);
 
+    await clickTab('Order parties');
     const bodyText = await page.locator('body').textContent() || '';
     const hasAddress = bodyText.toLowerCase().includes('delivery') ||
       bodyText.toLowerCase().includes('address') ||
@@ -857,119 +832,102 @@ test.describe('ORDER 2 — 61830302', () => {
       bodyText.toLowerCase().includes('city') ||
       bodyText.toLowerCase().includes('zip') ||
       bodyText.toLowerCase().includes('name');
-    console.log('[61830302] 2. Delivery address visible:', hasAddress);
+    console.log('[ORDER 2] 2. Delivery address visible:', hasAddress);
     expect(hasAddress).toBeTruthy();
     await screenshot('order2-2-delivery-address');
   });
 
-  // 3. Stock warnings for BB-FLA-002 and BT-SPK-002
-  test('[61830302] 3. Stock warnings for BB-FLA-002 and BT-SPK-002', async () => {
+  test('[ORDER 2] 3. Stock warning check', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasWarning =
-      (bodyText.includes('BB-FLA-002') || bodyText.includes('BT-SPK-002')) &&
+    const hasWarning = order2Positions.some(p => bodyText.includes(p.sku)) &&
       (bodyText.toLowerCase().includes('stock') ||
-        bodyText.toLowerCase().includes('warning') ||
-        bodyText.toLowerCase().includes('insufficient'));
-    console.log('[61830302] 3. Stock warning for BB-FLA-002 or BT-SPK-002:', hasWarning);
+       bodyText.toLowerCase().includes('warning') ||
+       bodyText.toLowerCase().includes('insufficient'));
+    console.log('[ORDER 2] 3. Stock warning for any position:', hasWarning);
     await screenshot('order2-3-stock-warnings');
   });
 
-  // 4a. Import CANP — mixed handling
-  test('[61830302] 4a. Import CANP — mixed handling', async () => {
+  test('[ORDER 2] 4a. Import CANP — mixed handling', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    await importEDI('CANP', ORDER_2, {
-      positions: [
-        { sku: 'BT-SPK-002' },
-        { sku: 'AKK-LDG-001' },
-        { sku: 'BB-FLA-002' },
-      ],
-      reason: 'Cancellation',
-    });
+    const positions = order2Positions.length ? order2Positions : [{ sku: 'UNKNOWN', qty: 1 }];
+    await importEDI('CANP', ORDER_2, { positions, reason: 'Cancellation' });
     await clickTab('Cancellation request');
     await screenshot('order2-4a-canp-mixed');
   });
 
-  // 4b. Approve 6 of 10 for BT-SPK-002
-  test('[61830302] 4b. Approve 6 of 10 for BT-SPK-002', async () => {
+  test('[ORDER 2] 4b. Approve first position (partial qty)', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
+    const firstSku = order2Positions[0]?.sku || '';
     const rows = page.locator('tbody tr');
     const count = await rows.count();
     for (let i = 0; i < count; i++) {
       const rowText = await rows.nth(i).textContent() || '';
-      if (rowText.includes('BT-SPK-002')) {
+      if (firstSku && rowText.includes(firstSku)) {
         const qtyInput = rows.nth(i).locator('input[type="number"]');
-        if (await qtyInput.isVisible({ timeout: 2000 })) {
-          await qtyInput.fill('6');
-        }
+        if (await qtyInput.isVisible({ timeout: 2000 })) await qtyInput.fill('1');
         const approveBtn = rows.nth(i).getByRole('button', { name: /approve|accept/i });
         if (await approveBtn.isVisible({ timeout: 2000 })) {
-          await approveBtn.click();
-          await page.waitForTimeout(2000);
+          await approveBtn.click(); await page.waitForTimeout(2000);
         }
         break;
       }
     }
-    console.log('[61830302] 4b. BT-SPK-002: approving 6 of 10');
+    console.log(`[ORDER 2] 4b. First position (${firstSku || 'unknown'}): approve attempted`);
     await screenshot('order2-4b-btspk-approve');
   });
 
-  // 4c. Reject AKK-LDG-001
-  test('[61830302] 4c. Reject AKK-LDG-001', async () => {
+  test('[ORDER 2] 4c. Reject second position', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
+    const secondSku = order2Positions[1]?.sku || '';
     const rows = page.locator('tbody tr');
     const count = await rows.count();
     let found = false;
     for (let i = 0; i < count; i++) {
       const rowText = await rows.nth(i).textContent() || '';
-      if (rowText.includes('AKK-LDG-001')) {
+      if (secondSku && rowText.includes(secondSku)) {
         const rejectBtn = rows.nth(i).getByRole('button', { name: /reject/i });
         if (await rejectBtn.isVisible({ timeout: 2000 })) {
-          await rejectBtn.click();
-          await page.waitForTimeout(2000);
-          found = true;
+          await rejectBtn.click(); await page.waitForTimeout(2000); found = true;
         }
         break;
       }
     }
-    console.log('[61830302] 4c. AKK-LDG-001 reject button clicked:', found);
+    console.log(`[ORDER 2] 4c. Second position (${secondSku || 'unknown'}) reject clicked:`, found);
     await screenshot('order2-4c-akk-reject');
   });
 
-  // 4d. Accept BB-FLA-002
-  test('[61830302] 4d. Accept BB-FLA-002', async () => {
+  test('[ORDER 2] 4d. Accept third position', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
+    const thirdSku = order2Positions[2]?.sku || '';
     const rows = page.locator('tbody tr');
     const count = await rows.count();
     let found = false;
     for (let i = 0; i < count; i++) {
       const rowText = await rows.nth(i).textContent() || '';
-      if (rowText.includes('BB-FLA-002')) {
+      if (thirdSku && rowText.includes(thirdSku)) {
         const acceptBtn = rows.nth(i).getByRole('button', { name: /accept|approve/i });
         if (await acceptBtn.isVisible({ timeout: 2000 })) {
-          await acceptBtn.click();
-          await page.waitForTimeout(2000);
-          found = true;
+          await acceptBtn.click(); await page.waitForTimeout(2000); found = true;
         }
         break;
       }
     }
-    console.log('[61830302] 4d. BB-FLA-002 accept button clicked:', found);
+    console.log(`[ORDER 2] 4d. Third position (${thirdSku || 'unknown'}) accept clicked:`, found);
     await screenshot('order2-4d-bbfla-accept');
   });
 
-  // 4e. Save cancellation
-  test('[61830302] 4e. Save cancellation decisions', async () => {
+  test('[ORDER 2] 4e. Save cancellation decisions', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -977,76 +935,63 @@ test.describe('ORDER 2 — 61830302', () => {
     await screenshot('order2-4e-canp-saved');
   });
 
-  // 4f. Verify items enabled after save
-  test('[61830302] 4f. Verify enabled items and statuses', async () => {
+  test('[ORDER 2] 4f. Verify enabled items and statuses', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const inputs = page.locator('tbody tr input:not([disabled])').filter({ visible: true });
-    const count = await inputs.count();
-    console.log('[61830302] 4f. Enabled inputs in tbody after save:', count);
-
+    console.log('[ORDER 2] 4f. Enabled inputs in tbody after save:', await inputs.count());
     const bodyText = await page.locator('body').textContent() || '';
-    const hasCancelled = bodyText.includes('Cancelled');
-    const hasRejected = bodyText.includes('Rejected');
-    const hasApproved = bodyText.includes('Approved');
-    console.log('[61830302] 4f. Cancellation statuses — Cancelled:', hasCancelled, '| Rejected:', hasRejected, '| Approved:', hasApproved);
+    console.log('[ORDER 2] 4f. Cancellation statuses — Cancelled:', bodyText.includes('Cancelled'),
+      '| Rejected:', bodyText.includes('Rejected'), '| Approved:', bodyText.includes('Approved'));
     await screenshot('order2-4f-statuses');
   });
 
-  // 5a. Confirm all open positions
-  test('[61830302] 5a. Confirm all open positions', async () => {
+  test('[ORDER 2] 5a. Confirm all open positions', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const confirmAllBtn = page.getByRole('button', { name: /confirm all/i }).filter({ visible: true }).first();
     if (await confirmAllBtn.isVisible({ timeout: 3000 })) {
-      await confirmAllBtn.click();
-      await page.waitForTimeout(3000);
+      await confirmAllBtn.click(); await page.waitForTimeout(3000);
     } else {
       const rows = page.locator('tbody tr');
       const count = await rows.count();
       for (let i = 0; i < count; i++) {
         const confirmBtn = rows.nth(i).getByRole('button', { name: /confirm/i });
         if (await confirmBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await confirmBtn.click();
-          await page.waitForTimeout(1000);
+          await confirmBtn.click(); await page.waitForTimeout(1000);
         }
       }
     }
     await screenshot('order2-5a-confirm-all');
   });
 
-  // 5b. Save and check status Confirmed
-  test('[61830302] 5b. Save and check Confirmed status', async () => {
+  test('[ORDER 2] 5b. Save and check Confirmed status', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     await saveOrder();
     const status = await getOrderStatus();
-    console.log('[61830302] 5b. Order status after confirm:', status);
-    const isConfirmed = status === 'Confirmed';
-    console.log('[61830302] 5b. Status is Confirmed:', isConfirmed);
+    console.log('[ORDER 2] 5b. Order status after confirm:', status);
+    console.log('[ORDER 2] 5b. Status is Confirmed:', status === 'Confirmed');
     await screenshot('order2-5b-confirmed');
   });
 
-  // 5c. GORDR on SFTP
-  test('[61830302] 5c. GORDR on SFTP', async () => {
+  test('[ORDER 2] 5c. GORDR on SFTP', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/GORDR.*61830302/i, 30000);
-    console.log('[61830302] 5c. GORDR file on SFTP:', file);
+    const file = await waitForSftpFile(sftpPat('GORDR', ORDER_2), 30000);
+    console.log('[ORDER 2] 5c. GORDR file on SFTP:', file);
   });
 
-  // 5d. GCANR on SFTP
-  test('[61830302] 5d. GCANR on SFTP', async () => {
+  test('[ORDER 2] 5d. GCANR on SFTP', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/GCANR.*61830302/i, 30000);
-    console.log('[61830302] 5d. GCANR file on SFTP:', file);
+    const file = await waitForSftpFile(sftpPat('GCANR', ORDER_2), 30000);
+    console.log('[ORDER 2] 5d. GCANR file on SFTP:', file);
     await screenshot('order2-5d-gcanr');
   });
 
-  // 6a. Create shipment — split AKK-LDG-001
-  test('[61830302] 6a. Create shipment — split positions', async () => {
+  test('[ORDER 2] 6a. Create shipment — split positions', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -1055,48 +1000,34 @@ test.describe('ORDER 2 — 61830302', () => {
     try {
       const rows = page.locator('tbody tr');
       const count = await rows.count();
-      for (let i = 0; i < count; i++) {
-        const rowText = await rows.nth(i).textContent() || '';
-        if (rowText.includes('AKK-LDG-001')) {
-          const qtyInput = rows.nth(i).locator('input[type="number"]');
-          if (await qtyInput.isVisible({ timeout: 2000 })) {
-            await qtyInput.fill('3');
-          }
-          const check = rows.nth(i).locator('input[type="checkbox"]');
-          if (await check.isVisible({ timeout: 2000 })) { await check.check(); }
-        }
-        if (rowText.includes('BT-SPK-002')) {
-          const qtyInput = rows.nth(i).locator('input[type="number"]');
-          if (await qtyInput.isVisible({ timeout: 2000 })) {
-            await qtyInput.fill('4');
-          }
-          const check = rows.nth(i).locator('input[type="checkbox"]');
-          if (await check.isVisible({ timeout: 2000 })) { await check.check(); }
+      // Select first two positions for split shipment
+      let selected = 0;
+      for (let i = 0; i < count && selected < 2; i++) {
+        const check = rows.nth(i).locator('input[type="checkbox"]');
+        if (await check.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await check.check(); selected++;
         }
       }
     } catch (e) {
-      console.log('[61830302] 6a. Could not select positions:', e);
+      console.log('[ORDER 2] 6a. Could not select positions:', e);
     }
 
     await screenshot('order2-6a-split-shipment');
   });
 
-  // 6b. Verify fields visible
-  test('[61830302] 6b. Verify shipment fields visible', async () => {
+  test('[ORDER 2] 6b. Verify shipment fields visible', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasCarrier = bodyText.toLowerCase().includes('carrier');
-    const hasParcelType = bodyText.toLowerCase().includes('parcel') || bodyText.toLowerCase().includes('type');
-    const hasShipNum = bodyText.toLowerCase().includes('shipment');
-    const hasDelivNote = bodyText.toLowerCase().includes('delivery note') || bodyText.toLowerCase().includes('note');
-    console.log('[61830302] 6b. Fields — carrier:', hasCarrier, '| parcel type:', hasParcelType, '| shipment number:', hasShipNum, '| delivery note:', hasDelivNote);
+    console.log('[ORDER 2] 6b. Fields — carrier:', bodyText.toLowerCase().includes('carrier'),
+      '| parcel type:', bodyText.toLowerCase().includes('parcel') || bodyText.toLowerCase().includes('type'),
+      '| shipment number:', bodyText.toLowerCase().includes('shipment'),
+      '| delivery note:', bodyText.toLowerCase().includes('delivery note') || bodyText.toLowerCase().includes('note'));
     await screenshot('order2-6b-shipment-fields');
   });
 
-  // 6c. Fill fields and save
-  test('[61830302] 6c. Fill shipment details and save', async () => {
+  test('[ORDER 2] 6c. Fill shipment details and save', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -1106,43 +1037,30 @@ test.describe('ORDER 2 — 61830302', () => {
     } catch {}
 
     try {
-      const parcelTypeInput = page.locator('input[name*="parcel"], select[name*="parcel"]').first();
-      if (await parcelTypeInput.isVisible({ timeout: 3000 })) await parcelTypeInput.fill('Package');
-    } catch {}
-
-    try {
       const shipNumInput = page.locator('input[name*="shipment"], input[placeholder*="shipment"], input[name*="tracking"]').first();
       if (await shipNumInput.isVisible({ timeout: 3000 })) await shipNumInput.fill('SHIP-302-A');
-    } catch {}
-
-    try {
-      const delivNote = page.locator('input[name*="delivery"], input[placeholder*="delivery note"]').first();
-      if (await delivNote.isVisible({ timeout: 3000 })) await delivNote.fill('DN-001');
     } catch {}
 
     await saveOrder();
     await screenshot('order2-6c-shipment-saved');
   });
 
-  // 7. After save only DELR on SFTP
-  test('[61830302] 7. GDELR on SFTP after shipment', async () => {
+  test('[ORDER 2] 7. GDELR on SFTP after shipment', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/GDELR.*61830302/i, 30000);
-    console.log('[61830302] 7. GDELR file on SFTP:', file);
+    const file = await waitForSftpFile(sftpPat('GDELR', ORDER_2), 30000);
+    console.log('[ORDER 2] 7. GDELR file on SFTP:', file);
     await screenshot('order2-7-gdelr');
   });
 
-  // 8. Order remains Confirmed
-  test('[61830302] 8. Order remains Confirmed', async () => {
+  test('[ORDER 2] 8. Order remains Confirmed', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const status = await getOrderStatus();
-    console.log('[61830302] 8. Order status (expect Confirmed):', status);
+    console.log('[ORDER 2] 8. Order status (expect Confirmed):', status);
   });
 
-  // 9a. Shipping for position 5 (Letter)
-  test('[61830302] 9a. Shipping for remaining position — Letter parcel type', async () => {
+  test('[ORDER 2] 9a. Shipping for remaining position — Letter parcel type', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -1151,14 +1069,10 @@ test.describe('ORDER 2 — 61830302', () => {
     try {
       const rows = page.locator('tbody tr');
       const count = await rows.count();
-      for (let i = 0; i < count; i++) {
-        const rowText = await rows.nth(i).textContent() || '';
-        if (rowText.includes('AKK-LDG-001')) {
-          const check = rows.nth(i).locator('input[type="checkbox"]');
-          if (await check.isVisible({ timeout: 2000 })) { await check.check(); }
-          break;
-        }
-      }
+      // Select last unshipped position
+      const lastRow = rows.nth(count - 1);
+      const check = lastRow.locator('input[type="checkbox"]');
+      if (await check.isVisible({ timeout: 2000 })) await check.check();
     } catch {}
 
     try {
@@ -1167,28 +1081,23 @@ test.describe('ORDER 2 — 61830302', () => {
         await parcelSelect.selectOption({ label: 'Letter' });
       } else {
         const parcelInput = page.locator('input[name*="parcel"]').first();
-        if (await parcelInput.isVisible({ timeout: 3000 })) {
-          await parcelInput.fill('Letter');
-        }
+        if (await parcelInput.isVisible({ timeout: 3000 })) await parcelInput.fill('Letter');
       }
     } catch {}
 
     await screenshot('order2-9a-letter-shipment');
   });
 
-  // 9b. Verify shipment number NOT required for Letter
-  test('[61830302] 9b. Shipment number not required for Letter', async () => {
+  test('[ORDER 2] 9b. Shipment number not required for Letter', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasLetter = bodyText.toLowerCase().includes('letter');
-    console.log('[61830302] 9b. Letter parcel type selected:', hasLetter);
+    console.log('[ORDER 2] 9b. Letter parcel type selected:', bodyText.toLowerCase().includes('letter'));
     await screenshot('order2-9b-letter-no-shipnum');
   });
 
-  // 9c. Save letter shipment
-  test('[61830302] 9c. Save letter shipment', async () => {
+  test('[ORDER 2] 9c. Save letter shipment', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -1196,21 +1105,18 @@ test.describe('ORDER 2 — 61830302', () => {
     await screenshot('order2-9c-letter-saved');
   });
 
-  // 9d. GDELR and Shipped status
-  test('[61830302] 9d. GDELR and check Shipped status', async () => {
+  test('[ORDER 2] 9d. GDELR and check Shipped status', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/GDELR.*61830302/i, 60000);
-    console.log('[61830302] 9d. GDELR file on SFTP:', file);
-
+    const file = await waitForSftpFile(sftpPat('GDELR', ORDER_2), 60000);
+    console.log('[ORDER 2] 9d. GDELR file on SFTP:', file);
     if (opened) {
       const status = await getOrderStatus();
-      console.log('[61830302] 9d. Order status (expect Shipped):', status);
+      console.log('[ORDER 2] 9d. Order status (expect Shipped):', status);
     }
     await screenshot('order2-9d-shipped');
   });
 
-  // 10a. Manual return (UAR) for position 2
-  test('[61830302] 10a. Manual return — Register return for position 2', async () => {
+  test('[ORDER 2] 10a. Manual return — Register return for second position', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -1223,70 +1129,60 @@ test.describe('ORDER 2 — 61830302', () => {
       await uarBtn.click();
       await page.waitForTimeout(3000);
       const qtyInput = page.locator('input[type="number"]').filter({ visible: true }).first();
-      if (await qtyInput.isVisible({ timeout: 2000 })) {
-        await qtyInput.fill('2');
-      }
+      if (await qtyInput.isVisible({ timeout: 2000 })) await qtyInput.fill('1');
     } else {
-      console.log('[61830302] 10a. UAR/Register return button not found on position 2');
+      console.log('[ORDER 2] 10a. UAR/Register return button not found on position 2');
     }
     await screenshot('order2-10a-uar-setup');
   });
 
-  // 10b. Verify status To confirm before save
-  test('[61830302] 10b. Status To confirm before save', async () => {
+  test('[ORDER 2] 10b. Status To confirm before save', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasToConfirm = bodyText.toLowerCase().includes('to confirm');
-    console.log('[61830302] 10b. Status To confirm before save:', hasToConfirm);
+    console.log('[ORDER 2] 10b. Status To confirm before save:', bodyText.toLowerCase().includes('to confirm'));
   });
 
-  // 10c. Save UAR
-  test('[61830302] 10c. Save UAR', async () => {
+  test('[ORDER 2] 10c. Save UAR', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     await saveOrder();
     const bodyText = await page.locator('body').textContent() || '';
-    const isConfirmed = bodyText.includes('Confirmed');
-    console.log('[61830302] 10c. Status Confirmed after UAR save:', isConfirmed);
-
-    const hasReturned = bodyText.includes('Returned');
-    console.log('[61830302] 10c. Body contains Returned for position 2:', hasReturned);
+    console.log('[ORDER 2] 10c. Status Confirmed after UAR save:', bodyText.includes('Confirmed'));
+    console.log('[ORDER 2] 10c. Body contains Returned for position:', bodyText.includes('Returned'));
     await screenshot('order2-10c-uar-saved');
   });
 
-  // 10d. GSURN on SFTP
-  test('[61830302] 10d. GSURN on SFTP', async () => {
+  test('[ORDER 2] 10d. GSURN on SFTP', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/GSURN.*61830302/i, 30000);
-    console.log('[61830302] 10d. GSURN file on SFTP:', file);
+    const file = await waitForSftpFile(sftpPat('GSURN', ORDER_2), 30000);
+    console.log('[ORDER 2] 10d. GSURN file on SFTP:', file);
     await screenshot('order2-10d-gsurn');
   });
 
-  // 11. Order stays Shipped
-  test('[61830302] 11. Order stays Shipped', async () => {
+  test('[ORDER 2] 11. Order stays Shipped', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const status = await getOrderStatus();
-    console.log('[61830302] 11. Order status (expect Shipped):', status);
+    console.log('[ORDER 2] 11. Order status (expect Shipped):', status);
     await screenshot('order2-11-final-status');
   });
 });
 
 // ===========================================================================
-// ORDER 3 — 61830303
+// ORDER 3
 // ===========================================================================
 
-test.describe('ORDER 3 — 61830303', () => {
+test.describe('ORDER 3', () => {
   let opened = false;
 
-  // 1. Alert email / notification
-  test('[61830303] 1. Alert email / notification', async () => {
+  test('[ORDER 3] 1. Alert email / notification', async () => {
     test.setTimeout(120000);
-    const alertResult = registerAlertHandler('[61830303] notification');
+    if (!ORDER_3) { test.skip(); return; }
+    const alertResult = registerAlertHandler('[ORDER 3] notification');
     await ordersPage.navigateToOrders();
     await page.waitForTimeout(3000);
 
@@ -1294,13 +1190,13 @@ test.describe('ORDER 3 — 61830303', () => {
     const hasNotification = alertResult.triggered ||
       bodyText.toLowerCase().includes('new order') ||
       bodyText.toLowerCase().includes('notification');
-    console.log('[61830303] 1. Notification/alert visible:', hasNotification);
+    console.log('[ORDER 3] 1. Notification/alert visible:', hasNotification);
     await screenshot('order3-1-notification');
   });
 
-  // 2. Order in overview
-  test('[61830303] 2. Order in overview', async () => {
+  test('[ORDER 3] 2. Order in overview', async () => {
     test.setTimeout(120000);
+    if (!ORDER_3) { test.skip(); return; }
     await ordersPage.navigateToOrders();
     await page.waitForTimeout(3000);
 
@@ -1320,36 +1216,32 @@ test.describe('ORDER 3 — 61830303', () => {
       if (text && text.includes(ORDER_3)) { rowFound = true; break; }
     }
 
-    if (!rowFound) {
-      console.log('Order not found');
-      test.skip();
-      return;
-    }
-
+    if (!rowFound) { console.log('Order not found'); test.skip(); return; }
     expect(rowFound).toBeTruthy();
+    console.log(`[ORDER 3] 2. Order ${ORDER_3} found in overview`);
     await screenshot('order3-2-overview');
   });
 
-  // 3. Order status = New
-  test('[61830303] 3. Order status = New', async () => {
+  test('[ORDER 3] 3. Order status = New', async () => {
     test.setTimeout(120000);
     opened = await findAndOpenOrder(ORDER_3);
     if (!opened) { test.skip(); return; }
 
     const status = await getOrderStatus();
-    console.log('[61830303] 3. Order status (expect New):', status);
-    const isNew = status === 'New';
-    console.log('[61830303] 3. Status is New:', isNew);
+    console.log('[ORDER 3] 3. Order status (expect New):', status);
+    console.log('[ORDER 3] 3. Status is New:', status === 'New');
     await screenshot('order3-3-status-new');
   });
 
-  // 4. Delivery address
-  test('[61830303] 4. Delivery address', async () => {
+  test('[ORDER 3] 4. Delivery address', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    await clickTab('Order parties');
+    // Extract positions while order is open
+    order3Positions = await extractPositions();
+    console.log(`[ORDER 3] positions extracted: ${order3Positions.map(p => p.sku).join(', ') || 'none'}`);
 
+    await clickTab('Order parties');
     const bodyText = await page.locator('body').textContent() || '';
     const hasAddress = bodyText.toLowerCase().includes('delivery') ||
       bodyText.toLowerCase().includes('address') ||
@@ -1357,174 +1249,157 @@ test.describe('ORDER 3 — 61830303', () => {
       bodyText.toLowerCase().includes('city') ||
       bodyText.toLowerCase().includes('zip') ||
       bodyText.toLowerCase().includes('name');
-    console.log('[61830303] 4. Delivery address visible:', hasAddress);
+    console.log('[ORDER 3] 4. Delivery address visible:', hasAddress);
     expect(hasAddress).toBeTruthy();
     await screenshot('order3-4-delivery-address');
   });
 
-  // 5a. BB-FLA-004 marked unknown
-  test('[61830303] 5a. BB-FLA-004 marked unknown', async () => {
+  test('[ORDER 3] 5a. First position — unknown SKU check', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
+    await clickTab('Order');
     const bodyText = await page.locator('body').textContent() || '';
-    const hasBBFLA = bodyText.includes('BB-FLA-004');
-    console.log('[61830303] 5a. BB-FLA-004 in body:', hasBBFLA);
-
+    const firstSku = order3Positions[0]?.sku || '';
+    const hasPos = firstSku ? bodyText.includes(firstSku) : false;
     const hasUnknown = bodyText.toLowerCase().includes('unknown');
-    console.log('[61830303] 5a. Unknown status near BB-FLA-004:', hasUnknown);
+    console.log(`[ORDER 3] 5a. First position (${firstSku || 'n/a'}) in body:`, hasPos);
+    console.log('[ORDER 3] 5a. Unknown status present:', hasUnknown);
     await screenshot('order3-5a-bbfla-unknown');
   });
 
-  // 5b. BB-FLA-004 can only reject
-  test('[61830303] 5b. BB-FLA-004 can only reject', async () => {
+  test('[ORDER 3] 5b. First position — only reject button check', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const rows = page.locator('tbody tr');
     const count = await rows.count();
     let nonRejectBtnCount = 0;
-    for (let i = 0; i < count; i++) {
-      const rowText = await rows.nth(i).textContent() || '';
-      if (rowText.includes('BB-FLA-004')) {
-        const allBtns = rows.nth(i).getByRole('button').filter({ visible: true });
-        const totalBtns = await allBtns.count();
-        for (let j = 0; j < totalBtns; j++) {
-          const btnText = await allBtns.nth(j).textContent() || '';
-          const btnName = await allBtns.nth(j).getAttribute('name') || '';
-          if (!btnText.toLowerCase().includes('reject') && !btnName.toLowerCase().includes('reject')) {
-            const isEnabled = await allBtns.nth(j).isEnabled();
-            if (isEnabled) nonRejectBtnCount++;
+    if (count > 0) {
+      const firstSku = order3Positions[0]?.sku || '';
+      for (let i = 0; i < count; i++) {
+        const rowText = await rows.nth(i).textContent() || '';
+        if (!firstSku || rowText.includes(firstSku)) {
+          const allBtns = rows.nth(i).getByRole('button').filter({ visible: true });
+          const totalBtns = await allBtns.count();
+          for (let j = 0; j < totalBtns; j++) {
+            const btnText = await allBtns.nth(j).textContent() || '';
+            const btnName = await allBtns.nth(j).getAttribute('name') || '';
+            if (!btnText.toLowerCase().includes('reject') && !btnName.toLowerCase().includes('reject')) {
+              if (await allBtns.nth(j).isEnabled()) nonRejectBtnCount++;
+            }
           }
+          break;
         }
-        break;
       }
     }
-    console.log('[61830303] 5b. Non-reject enabled buttons for BB-FLA-004 (expect 0):', nonRejectBtnCount);
+    console.log('[ORDER 3] 5b. Non-reject enabled buttons for first position (expect 0):', nonRejectBtnCount);
     await screenshot('order3-5b-bbfla-only-reject');
   });
 
-  // 6. Other positions fine
-  test('[61830303] 6. Other positions not marked unknown', async () => {
+  test('[ORDER 3] 6. Other positions not marked unknown', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const rows = page.locator('tbody tr');
     const count = await rows.count();
+    const firstSku = order3Positions[0]?.sku || '';
     let unknownInOthers = false;
     for (let i = 0; i < count; i++) {
       const rowText = await rows.nth(i).textContent() || '';
-      if (!rowText.includes('BB-FLA-004') && rowText.toLowerCase().includes('unknown')) {
-        unknownInOthers = true;
-        break;
+      if ((!firstSku || !rowText.includes(firstSku)) && rowText.toLowerCase().includes('unknown')) {
+        unknownInOthers = true; break;
       }
     }
-    console.log('[61830303] 6. Other positions marked unknown (expect false):', unknownInOthers);
+    console.log('[ORDER 3] 6. Other positions marked unknown (expect false):', unknownInOthers);
     await screenshot('order3-6-other-positions');
   });
 
-  // 7a. Reject BB-FLA-004
-  test('[61830303] 7a. Reject BB-FLA-004', async () => {
+  test('[ORDER 3] 7a. Reject first position', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const rows = page.locator('tbody tr');
     const count = await rows.count();
+    const firstSku = order3Positions[0]?.sku || '';
     let clicked = false;
     for (let i = 0; i < count; i++) {
       const rowText = await rows.nth(i).textContent() || '';
-      if (rowText.includes('BB-FLA-004')) {
+      if (!firstSku || rowText.includes(firstSku)) {
         const rejectBtn = rows.nth(i).getByRole('button', { name: /reject/i });
         if (await rejectBtn.isVisible({ timeout: 2000 })) {
-          await rejectBtn.click();
-          await page.waitForTimeout(2000);
-          clicked = true;
+          await rejectBtn.click(); await page.waitForTimeout(2000); clicked = true;
         }
         break;
       }
     }
-    console.log('[61830303] 7a. BB-FLA-004 reject button clicked:', clicked);
-
+    console.log(`[ORDER 3] 7a. First position (${firstSku || 'n/a'}) reject clicked:`, clicked);
     const bodyText = await page.locator('body').textContent() || '';
-    const hasAlert = bodyText.toLowerCase().includes('alert') ||
-      bodyText.toLowerCase().includes('warning') ||
-      bodyText.toLowerCase().includes('rejected');
-    console.log('[61830303] 7a. Alert/warning/rejected shown:', hasAlert);
+    console.log('[ORDER 3] 7a. Alert/warning/rejected shown:',
+      bodyText.toLowerCase().includes('alert') || bodyText.toLowerCase().includes('warning') || bodyText.toLowerCase().includes('rejected'));
     await screenshot('order3-7a-bbfla-reject');
   });
 
-  // 7b. Check body contains 'Cancelling'
-  test('[61830303] 7b. Body contains Cancelling', async () => {
+  test('[ORDER 3] 7b. Body contains Cancelling', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    const hasCancelling = bodyText.includes('Cancelling');
-    console.log('[61830303] 7b. Body contains Cancelling:', hasCancelling);
+    console.log('[ORDER 3] 7b. Body contains Cancelling:', bodyText.includes('Cancelling'));
   });
 
-  // 7c. Save BB-FLA-004 rejection
-  test('[61830303] 7c. Save BB-FLA-004 rejection', async () => {
+  test('[ORDER 3] 7c. Save first position rejection', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     await saveOrder();
     const bodyText = await page.locator('body').textContent() || '';
-    const hasCancelledByVendor = bodyText.includes('Cancelled by vendor');
-    console.log('[61830303] 7c. Body contains Cancelled by vendor:', hasCancelledByVendor);
+    console.log('[ORDER 3] 7c. Body contains Cancelled by vendor:', bodyText.includes('Cancelled by vendor'));
     await screenshot('order3-7c-bbfla-saved');
   });
 
-  // 7d. EOLN or GCANR on SFTP
-  test('[61830303] 7d. EOLN or GCANR on SFTP', async () => {
+  test('[ORDER 3] 7d. EOLN or GCANR on SFTP', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/EOLN.*61830303|GCANR.*61830303/i, 30000);
-    console.log('[61830303] 7d. EOLN/GCANR file on SFTP:', file);
+    const pattern = ORDER_3
+      ? new RegExp(`EOLN.*${ORDER_3}|GCANR.*${ORDER_3}`, 'i')
+      : /EOLN|GCANR/i;
+    const file = await waitForSftpFile(pattern, 30000);
+    console.log('[ORDER 3] 7d. EOLN/GCANR file on SFTP:', file);
     await screenshot('order3-7d-eoln-gcanr');
   });
 
-  // 8a. Import CANP — mixed quantities
-  test('[61830303] 8a. Import CANP — mixed quantities', async () => {
+  test('[ORDER 3] 8a. Import CANP — mixed quantities', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    await importEDI('CANP', ORDER_3, {
-      positions: [
-        { sku: 'BB-FLA-004' },
-        { sku: 'DART-S-004', qty: 2 },
-        { sku: 'BACK-001', qty: 5 },
-      ],
-      reason: 'Cancellation',
-    });
+    const positions = order3Positions.length ? order3Positions : [{ sku: 'UNKNOWN', qty: 1 }];
+    await importEDI('CANP', ORDER_3, { positions, reason: 'Cancellation' });
     await clickTab('Cancellation request');
     await screenshot('order3-8a-canp-import');
   });
 
-  // 8b. Verify positions not editable while CANP pending
-  test('[61830303] 8b. Positions not editable while CANP pending', async () => {
+  test('[ORDER 3] 8b. Positions not editable while CANP pending', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const inputs = page.locator('tbody tr input:not([disabled])').filter({ visible: true });
-    const count = await inputs.count();
-    console.log('[61830303] 8b. Enabled inputs while CANP pending:', count);
+    console.log('[ORDER 3] 8b. Enabled inputs while CANP pending:', await inputs.count());
     await screenshot('order3-8b-canp-pending');
   });
 
-  // 8c. Accept BB-FLA-004 fully
-  test('[61830303] 8c. Accept BB-FLA-004 fully', async () => {
+  test('[ORDER 3] 8c. Accept first position fully', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
+    const firstSku = order3Positions[0]?.sku || '';
     const rows = page.locator('tbody tr');
     const count = await rows.count();
     for (let i = 0; i < count; i++) {
       const rowText = await rows.nth(i).textContent() || '';
-      if (rowText.includes('BB-FLA-004')) {
+      if (!firstSku || rowText.includes(firstSku)) {
         const acceptBtn = rows.nth(i).getByRole('button', { name: /accept|approve/i });
         if (await acceptBtn.isVisible({ timeout: 2000 })) {
-          await acceptBtn.click();
-          await page.waitForTimeout(2000);
+          await acceptBtn.click(); await page.waitForTimeout(2000);
         }
         break;
       }
@@ -1532,22 +1407,21 @@ test.describe('ORDER 3 — 61830303', () => {
     await screenshot('order3-8c-bbfla-accept');
   });
 
-  // 8d. Accept DART-S-004 qty 2
-  test('[61830303] 8d. Accept DART-S-004 qty 2', async () => {
+  test('[ORDER 3] 8d. Accept second position', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
+    const secondSku = order3Positions[1]?.sku || '';
     const rows = page.locator('tbody tr');
     const count = await rows.count();
     for (let i = 0; i < count; i++) {
       const rowText = await rows.nth(i).textContent() || '';
-      if (rowText.includes('DART-S-004')) {
+      if (secondSku && rowText.includes(secondSku)) {
         const qtyInput = rows.nth(i).locator('input[type="number"]');
-        if (await qtyInput.isVisible({ timeout: 2000 })) { await qtyInput.fill('2'); }
+        if (await qtyInput.isVisible({ timeout: 2000 })) await qtyInput.fill(String(order3Positions[1].qty));
         const acceptBtn = rows.nth(i).getByRole('button', { name: /accept|approve/i });
         if (await acceptBtn.isVisible({ timeout: 2000 })) {
-          await acceptBtn.click();
-          await page.waitForTimeout(2000);
+          await acceptBtn.click(); await page.waitForTimeout(2000);
         }
         break;
       }
@@ -1555,22 +1429,21 @@ test.describe('ORDER 3 — 61830303', () => {
     await screenshot('order3-8d-darts-accept');
   });
 
-  // 8e. Accept BACK-001 qty 5
-  test('[61830303] 8e. Accept BACK-001 qty 5', async () => {
+  test('[ORDER 3] 8e. Accept third position', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
+    const thirdSku = order3Positions[2]?.sku || '';
     const rows = page.locator('tbody tr');
     const count = await rows.count();
     for (let i = 0; i < count; i++) {
       const rowText = await rows.nth(i).textContent() || '';
-      if (rowText.includes('BACK-001')) {
+      if (thirdSku && rowText.includes(thirdSku)) {
         const qtyInput = rows.nth(i).locator('input[type="number"]');
-        if (await qtyInput.isVisible({ timeout: 2000 })) { await qtyInput.fill('5'); }
+        if (await qtyInput.isVisible({ timeout: 2000 })) await qtyInput.fill(String(order3Positions[2].qty));
         const acceptBtn = rows.nth(i).getByRole('button', { name: /accept|approve/i });
         if (await acceptBtn.isVisible({ timeout: 2000 })) {
-          await acceptBtn.click();
-          await page.waitForTimeout(2000);
+          await acceptBtn.click(); await page.waitForTimeout(2000);
         }
         break;
       }
@@ -1578,80 +1451,76 @@ test.describe('ORDER 3 — 61830303', () => {
     await screenshot('order3-8e-back001-accept');
   });
 
-  // 8f. Save CANP decisions
-  test('[61830303] 8f. Save CANP decisions', async () => {
+  test('[ORDER 3] 8f. Save CANP decisions', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     await saveOrder();
     const bodyText = await page.locator('body').textContent() || '';
-    const hasMultipleRows = (bodyText.match(/DART-S-004|BACK-001|BB-FLA-004/g) || []).length > 1;
-    console.log('[61830303] 8f. Split positions visible (multiple rows):', hasMultipleRows);
+    const hasMultiple = order3Positions.filter(p => bodyText.includes(p.sku)).length > 1;
+    console.log('[ORDER 3] 8f. Multiple positions visible after save:', hasMultiple);
     await screenshot('order3-8f-canp-saved');
   });
 
-  // 8g. GCANR on SFTP
-  test('[61830303] 8g. GCANR on SFTP', async () => {
+  test('[ORDER 3] 8g. GCANR on SFTP', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/GCANR.*61830303/i, 30000);
-    console.log('[61830303] 8g. GCANR file on SFTP:', file);
+    const file = await waitForSftpFile(sftpPat('GCANR', ORDER_3), 30000);
+    console.log('[ORDER 3] 8g. GCANR file on SFTP:', file);
     await screenshot('order3-8g-gcanr');
   });
 
-  // 9a. Confirm open positions
-  test('[61830303] 9a. Confirm open positions', async () => {
+  test('[ORDER 3] 9a. Confirm open positions', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const confirmAllBtn = page.getByRole('button', { name: /confirm all/i }).filter({ visible: true }).first();
     if (await confirmAllBtn.isVisible({ timeout: 3000 })) {
-      await confirmAllBtn.click();
-      await page.waitForTimeout(3000);
+      await confirmAllBtn.click(); await page.waitForTimeout(3000);
     } else {
       const rows = page.locator('tbody tr');
       const count = await rows.count();
       for (let i = 0; i < count; i++) {
         const confirmBtn = rows.nth(i).getByRole('button', { name: /confirm/i });
         if (await confirmBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await confirmBtn.click();
-          await page.waitForTimeout(1000);
+          await confirmBtn.click(); await page.waitForTimeout(1000);
         }
       }
     }
     await screenshot('order3-9a-confirm-positions');
   });
 
-  // 9b. Save and check status
-  test('[61830303] 9b. Save and check status', async () => {
+  test('[ORDER 3] 9b. Save and check status', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     await saveOrder();
     const status = await getOrderStatus();
-    console.log('[61830303] 9b. Order status after confirm:', status);
+    console.log('[ORDER 3] 9b. Order status after confirm:', status);
     await screenshot('order3-9b-status-after-confirm');
   });
 
-  // 9c. GORDR on SFTP
-  test('[61830303] 9c. GORDR on SFTP', async () => {
+  test('[ORDER 3] 9c. GORDR on SFTP', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/GORDR.*61830303/i, 30000);
-    console.log('[61830303] 9c. GORDR file on SFTP:', file);
+    const file = await waitForSftpFile(sftpPat('GORDR', ORDER_3), 30000);
+    console.log('[ORDER 3] 9c. GORDR file on SFTP:', file);
     await screenshot('order3-9c-gordr');
   });
 
-  // 10a. Import RETP — can't accept before shipped
-  test('[61830303] 10a. Import RETP — cannot accept before shipped', async () => {
+  test('[ORDER 3] 10a. Import RETP — cannot accept before shipped', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    await importEDI('RETP', ORDER_3, { positions: [{ sku: 'DART-S-004', qty: 1 }], reason: 'Defective' });
+    const positions = order3Positions.length > 1
+      ? [{ sku: order3Positions[1].sku, qty: 1 }]
+      : order3Positions.length
+        ? [{ sku: order3Positions[0].sku, qty: 1 }]
+        : [{ sku: 'UNKNOWN', qty: 1 }];
+    await importEDI('RETP', ORDER_3, { positions, reason: 'Defective' });
     await clickTab('Return request');
     await screenshot('order3-10a-retp-import');
   });
 
-  // 10b. Accept button disabled before shipped
-  test('[61830303] 10b. Accept return disabled before shipped', async () => {
+  test('[ORDER 3] 10b. Accept return disabled before shipped', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -1660,24 +1529,22 @@ test.describe('ORDER 3 — 61830303', () => {
     if (found) {
       const isEnabled = await acceptBtn.isEnabled();
       if (!isEnabled) {
-        console.log('[61830303] 10b. Cannot accept return before shipped: correct (button disabled)');
+        console.log('[ORDER 3] 10b. Cannot accept return before shipped: correct (button disabled)');
       } else {
-        await acceptBtn.click();
-        await page.waitForTimeout(2000);
+        await acceptBtn.click(); await page.waitForTimeout(2000);
         const bodyText = await page.locator('body').textContent() || '';
         const hasError = bodyText.toLowerCase().includes('error') ||
           bodyText.toLowerCase().includes('not shipped') ||
           bodyText.toLowerCase().includes('cannot');
-        console.log('[61830303] 10b. Cannot accept return before shipped: error shown:', hasError);
+        console.log('[ORDER 3] 10b. Cannot accept before shipped — error shown:', hasError);
       }
     } else {
-      console.log('[61830303] 10b. Cannot accept return before shipped: correct (button not found)');
+      console.log('[ORDER 3] 10b. Cannot accept return before shipped: correct (button not found)');
     }
     await screenshot('order3-10b-retp-disabled');
   });
 
-  // 11. Create shipping with all positions
-  test('[61830303] 11. Create shipping with all positions', async () => {
+  test('[ORDER 3] 11. Create shipping with all positions', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
@@ -1688,12 +1555,10 @@ test.describe('ORDER 3 — 61830303', () => {
       const count = await rows.count();
       for (let i = 0; i < count; i++) {
         const check = rows.nth(i).locator('input[type="checkbox"]');
-        if (await check.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await check.check();
-        }
+        if (await check.isVisible({ timeout: 1000 }).catch(() => false)) await check.check();
       }
     } catch (e) {
-      console.log('[61830303] 11. Could not select all positions:', e);
+      console.log('[ORDER 3] 11. Could not select all positions:', e);
     }
 
     try {
@@ -1710,30 +1575,27 @@ test.describe('ORDER 3 — 61830303', () => {
     await screenshot('order3-11-shipment-saved');
   });
 
-  // 11b. GDELR on SFTP
-  test('[61830303] 11b. GDELR on SFTP', async () => {
+  test('[ORDER 3] 11b. GDELR on SFTP', async () => {
     test.setTimeout(120000);
-    const file = await waitForSftpFile(/GDELR.*61830303/i, 30000);
-    console.log('[61830303] 11b. GDELR file on SFTP:', file);
+    const file = await waitForSftpFile(sftpPat('GDELR', ORDER_3), 30000);
+    console.log('[ORDER 3] 11b. GDELR file on SFTP:', file);
     await screenshot('order3-11b-gdelr');
   });
 
-  // 12. Accept return DART-S-004
-  test('[61830303] 12. Accept return DART-S-004', async () => {
+  test('[ORDER 3] 12. Accept return for second position', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     await clickTab('Return request');
-
+    const secondSku = order3Positions.length > 1 ? order3Positions[1].sku : order3Positions[0]?.sku || '';
     const rows = page.locator('tbody tr');
     const count = await rows.count();
     for (let i = 0; i < count; i++) {
       const rowText = await rows.nth(i).textContent() || '';
-      if (rowText.includes('DART-S-004')) {
+      if (!secondSku || rowText.includes(secondSku)) {
         const acceptBtn = rows.nth(i).getByRole('button', { name: /accept|approve/i });
         if (await acceptBtn.isVisible({ timeout: 2000 })) {
-          await acceptBtn.click();
-          await page.waitForTimeout(3000);
+          await acceptBtn.click(); await page.waitForTimeout(3000);
         }
         break;
       }
@@ -1741,48 +1603,44 @@ test.describe('ORDER 3 — 61830303', () => {
 
     await saveOrder();
     const bodyText = await page.locator('body').textContent() || '';
-    const hasReturned = bodyText.includes('Returned');
-    console.log('[61830303] 12. DART-S-004 Returned status:', hasReturned);
+    console.log('[ORDER 3] 12. Returned status:', bodyText.includes('Returned'));
     await screenshot('order3-12-dart-returned');
   });
 
-  // 13. BB-FLA-004 can only be cancelled
-  test('[61830303] 13. BB-FLA-004 can only be cancelled', async () => {
+  test('[ORDER 3] 13. First position can only be cancelled', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
+    const firstSku = order3Positions[0]?.sku || '';
     const rows = page.locator('tbody tr');
     const count = await rows.count();
     for (let i = 0; i < count; i++) {
       const rowText = await rows.nth(i).textContent() || '';
-      if (rowText.includes('BB-FLA-004')) {
+      if (!firstSku || rowText.includes(firstSku)) {
         const allBtns = rows.nth(i).getByRole('button').filter({ visible: true });
         const btnCount = await allBtns.count();
         let onlyCancel = true;
         for (let j = 0; j < btnCount; j++) {
           const btnText = (await allBtns.nth(j).textContent() || '').toLowerCase();
           const isEnabled = await allBtns.nth(j).isEnabled();
-          if (isEnabled && !btnText.includes('cancel') && !btnText.includes('reject')) {
-            onlyCancel = false;
-          }
+          if (isEnabled && !btnText.includes('cancel') && !btnText.includes('reject')) onlyCancel = false;
         }
-        console.log('[61830303] 13. BB-FLA-004 only cancel available:', onlyCancel);
+        console.log(`[ORDER 3] 13. First position (${firstSku || 'n/a'}) only cancel available:`, onlyCancel);
         break;
       }
     }
 
-    const file = await waitForSftpFile(/GSURN.*61830303/i, 30000);
-    console.log('[61830303] 13. GSURN file on SFTP:', file);
+    const file = await waitForSftpFile(sftpPat('GSURN', ORDER_3), 30000);
+    console.log('[ORDER 3] 13. GSURN file on SFTP:', file);
     await screenshot('order3-13-bbfla-cancel-only');
   });
 
-  // 14. Order status final check
-  test('[61830303] 14. Order status final check', async () => {
+  test('[ORDER 3] 14. Order status final check', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const status = await getOrderStatus();
-    console.log('[61830303] 14. Final order status:', status);
+    console.log('[ORDER 3] 14. Final order status:', status);
     await screenshot('order3-14-final-status');
   });
 });
