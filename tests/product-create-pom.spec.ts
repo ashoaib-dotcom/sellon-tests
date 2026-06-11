@@ -194,6 +194,8 @@ test('Step 12b: Fill Media URL', async () => {
 test('Step 13: Save the product', async () => {
   test.setTimeout(120000);
   await productForm.clickSave();
+  // Save lands on Media tab — navigate to Master data so provider key is in DOM
+  await productForm.clickTab('Master data');
   await productForm.expectBodyContains(TEST_SKU);
   try { await page.screenshot({ path: 'screenshots/pom-create-13-saved.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 13 PASSED');
@@ -201,6 +203,7 @@ test('Step 13: Save the product', async () => {
 
 test('Step 14: Verify product created', async () => {
   test.setTimeout(60000);
+  await productForm.clickTab('Master data');
   await productForm.expectBodyContains(TEST_SKU);
   await productForm.expectBodyContains(TEST_GTIN);
   await productForm.expectBodyContains('POMTestBrand');
