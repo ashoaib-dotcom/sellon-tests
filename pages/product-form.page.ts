@@ -88,10 +88,22 @@ export class ProductFormPage {
         'input:not([type="hidden"]):not([type="checkbox"]), textarea'
       ).nth(idx);
       await input.fill(value);
-      await this.page.waitForTimeout(500);
-      // Press Escape to dismiss any open autocomplete dropdown without submitting the form
-      await this.page.keyboard.press('Escape');
-      await this.page.waitForTimeout(200);
+      await this.page.waitForTimeout(1500);
+
+      // If an autocomplete dropdown appeared, click the first option so
+      // Angular's form model registers the selection (Escape closes without selecting).
+      const option = this.page.locator(
+        'mat-option, [role="option"], .ng-option, [class*="autocomplete"] li'
+      ).filter({ visible: true }).first();
+      if (await option.count() > 0) {
+        await option.click();
+        await this.page.waitForTimeout(400);
+      } else {
+        // No dropdown — press Tab to commit the typed value (Tab moves focus
+        // away, which Angular uses to finalise the field value).
+        await this.page.keyboard.press('Tab');
+        await this.page.waitForTimeout(300);
+      }
       console.log(`  ${labelText} = "${value}" → OK`);
       return true;
     }
@@ -298,10 +310,15 @@ export class ProductFormPage {
     throw new Error(`Field with label "${labelText}" not found on the page`);
   }
 
-  // Verify page body contains text
+  // Verify page body contains text — checks both visible text AND <input>/<textarea> values
+  // because innerText() does not capture the value attribute of form fields.
   async expectBodyContains(text: string) {
-    const bodyText = await this.page.locator('body').innerText();
-    expect(bodyText).toContain(text);
+    const found = await this.page.evaluate((searchText: string) => {
+      if ((document.body.innerText || '').includes(searchText)) return true;
+      return Array.from(document.querySelectorAll('input, textarea'))
+        .some((el) => ((el as HTMLInputElement).value || '').includes(searchText));
+    }, text);
+    expect(found, `Expected page to contain: "${text}"`).toBeTruthy();
   }
 
   // Verify page shows an error (red validation banner is visible)

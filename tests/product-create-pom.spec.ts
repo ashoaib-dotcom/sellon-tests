@@ -197,8 +197,13 @@ test('Step 13: Save the product', async () => {
   // Save leaves the page on Media tab — switch to Master data so provider key renders in DOM.
   // waitForFunction retries up to 15s so Angular has time to paint tab content.
   await productForm.clickTab('Master data');
+  // Wait until the SKU appears in either visible text or an input value
   await page.waitForFunction(
-    (sku: string) => document.body.innerText.includes(sku),
+    (sku: string) => {
+      if ((document.body.innerText || '').includes(sku)) return true;
+      return Array.from(document.querySelectorAll('input, textarea'))
+        .some((el) => ((el as HTMLInputElement).value || '').includes(sku));
+    },
     TEST_SKU,
     { timeout: 15000 }
   ).catch(() => {});  // let expectBodyContains surface the real failure message
