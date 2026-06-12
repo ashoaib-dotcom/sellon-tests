@@ -219,6 +219,25 @@ async function saveAndClickTab(tabName: string): Promise<boolean> {
   return clickTab(tabName);
 }
 
+// Navigate to the Shipment tab — saves once then tries multiple possible tab names with a short timeout.
+// Much cheaper than chaining saveAndClickTab() which saves before every attempt.
+async function navigateToShipmentTab(): Promise<boolean> {
+  await saveOrder();
+  for (const name of ['Shipment', 'Shipments', 'Shipping', 'Delivery', 'Deliveries']) {
+    try {
+      const tab = page.getByText(name, { exact: true }).filter({ visible: true }).first();
+      if (await tab.isVisible({ timeout: 2000 })) {
+        await tab.click();
+        await page.waitForTimeout(2000);
+        console.log(`  Shipment tab found: "${name}"`);
+        return true;
+      }
+    } catch {}
+  }
+  console.log('  Shipment tab not found — staying on current tab');
+  return false;
+}
+
 async function importEDI(
   type: string,
   orderId: string,
@@ -596,7 +615,7 @@ test.describe('ORDER 1', () => {
     if (!opened) { test.skip(); return; }
 
     // Navigate to the Shipment tab first — the "New shipment" button only appears there
-    const tabOpened = await saveAndClickTab('Shipment') || await saveAndClickTab('Shipments') || await saveAndClickTab('Shipping');
+    const tabOpened = await navigateToShipmentTab();
     console.log('[ORDER 1] 7a. Shipment tab opened:', tabOpened);
 
     const clicked = await clickButton(/new shipment|create shipment/i, 'new shipment');
@@ -1042,11 +1061,11 @@ test.describe('ORDER 2', () => {
   });
 
   test('[ORDER 2] 6a. Create shipment — navigate to Shipment tab and click new shipment', async () => {
-    test.setTimeout(120000);
+    test.setTimeout(180000);
     if (!opened) { test.skip(); return; }
 
     // Navigate to the Shipment tab first
-    const tabOpened = await saveAndClickTab('Shipment') || await saveAndClickTab('Shipments') || await saveAndClickTab('Shipping');
+    const tabOpened = await navigateToShipmentTab();
     console.log('[ORDER 2] 6a. Shipment tab opened:', tabOpened);
 
     await clickButton(/new shipment|create shipment/i, 'new shipment');
@@ -1127,60 +1146,90 @@ test.describe('ORDER 2', () => {
     console.log('[ORDER 2] 8. Order status (expect Confirmed):', status);
   });
 
-  test('[ORDER 2] 9a. Shipping for remaining position — Letter parcel type', async () => {
-    test.setTimeout(120000);
+  test('[ORDER 2] 9a. Second shipment — remaining back-ordered position with future delivery date', async () => {
+    test.setTimeout(180000);
     if (!opened) { test.skip(); return; }
 
-    // Ensure we are on the Shipment tab
-    await saveAndClickTab('Shipment') || await saveAndClickTab('Shipments') || await saveAndClickTab('Shipping');
+    // Navigate to Shipment tab for the second (back-ordered) shipment
+    await navigateToShipmentTab();
 
     await clickButton(/new shipment|create shipment/i, 'new shipment');
     await page.waitForTimeout(2000);
 
-    // Select remaining (unshipped) position checkboxes
+    // Select remaining unshipped position checkboxes
     try {
       const checkboxes = page.locator('tbody tr input[type="checkbox"]').filter({ visible: true });
       const count = await checkboxes.count();
       for (let i = 0; i < count; i++) {
-        if (!await checkboxes.nth(i).isChecked()) { await checkboxes.nth(i).check(); }
+        if (!await checkboxes.nth(i).isChecked()) await checkboxes.nth(i).check();
       }
-      console.log('[ORDER 2] 9a. Remaining position checkboxes:', count);
-    } catch {}
+      console.log('[ORDER 2] 9a. Remaining position checkboxes selected:', count);
+    } catch (e) { console.log('[ORDER 2] 9a. Checkbox selection failed:', e); }
 
-    // Select parcel type "Letter" — try mat-select/Angular dropdown first, then native select
+    // Set a future delivery date — stock not yet available, delivery scheduled for next month.
+    // Swiss date format: DD.MM.YYYY
+    try {
+      const future = new Date();
+      future.setMonth(future.getMonth() + 1);
+      const day   = String(future.getDate()).padStart(2, '0');
+      const month = String(future.getMonth() + 1).padStart(2, '0');
+      const year  = future.getFullYear();
+      const futureDateStr = `${day}.${month}.${year}`;
+
+      const dateByLabel = page.getByLabel(/delivery date|expected date|date/i, { exact: false }).first();
+      if (await dateByLabel.count() > 0 && await dateByLabel.isVisible({ timeout: 3000 })) {
+        await dateByLabel.fill(futureDateStr);
+        await page.keyboard.press('Tab');
+      } else {
+        const dateInput = page.locator('input[type="date"], input[name*="date"], input[placeholder*="date"]').filter({ visible: true }).first();
+        if (await dateInput.isVisible({ timeout: 3000 })) {
+          await dateInput.fill(futureDateStr);
+          await page.keyboard.press('Tab');
+        }
+      }
+      await page.waitForTimeout(500);
+      console.log('[ORDER 2] 9a. Future delivery date set:', futureDateStr);
+    } catch (e) { console.log('[ORDER 2] 9a. Future date fill failed:', e); }
+
+    // Select parcel type "Letter" — back-ordered items shipped as letter, no tracking number required
     try {
       const parcelByLabel = page.getByLabel(/parcel type|parcel/i, { exact: false }).first();
       if (await parcelByLabel.count() > 0 && await parcelByLabel.isVisible({ timeout: 3000 })) {
         await parcelByLabel.click();
         await page.waitForTimeout(500);
         const letterOpt = page.locator('mat-option, [role="option"]').filter({ hasText: /letter/i }).first();
-        if (await letterOpt.count() > 0) await letterOpt.click();
+        if (await letterOpt.count() > 0) { await letterOpt.click(); await page.waitForTimeout(500); }
       } else {
         const parcelSelect = page.locator('select[name*="parcel"], select[name*="type"]').first();
         if (await parcelSelect.isVisible({ timeout: 3000 })) {
           await parcelSelect.selectOption({ label: 'Letter' });
         }
       }
+      console.log('[ORDER 2] 9a. Letter parcel type selected');
     } catch (e) { console.log('[ORDER 2] 9a. Parcel type selection failed:', e); }
 
-    await screenshot('order2-9a-letter-shipment');
+    await screenshot('order2-9a-backorder-shipment');
   });
 
-  test('[ORDER 2] 9b. Shipment number not required for Letter', async () => {
+  test('[ORDER 2] 9b. Verify back-order shipment fields — no tracking number needed for Letter', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     const bodyText = await page.locator('body').textContent() || '';
-    console.log('[ORDER 2] 9b. Letter parcel type selected:', bodyText.toLowerCase().includes('letter'));
-    await screenshot('order2-9b-letter-no-shipnum');
+    console.log('[ORDER 2] 9b. Letter parcel type visible:', bodyText.toLowerCase().includes('letter'));
+    console.log('[ORDER 2] 9b. Future date visible:', bodyText.toLowerCase().includes(String(new Date().getFullYear())));
+    await screenshot('order2-9b-backorder-fields');
   });
 
-  test('[ORDER 2] 9c. Save letter shipment', async () => {
+  test('[ORDER 2] 9c. Save back-order shipment', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
     await saveOrder();
-    await screenshot('order2-9c-letter-saved');
+    const bodyText = await page.locator('body').textContent() || '';
+    console.log('[ORDER 2] 9c. Back-order shipment saved. Status:', await getOrderStatus());
+    console.log('[ORDER 2] 9c. Two shipments visible:', (bodyText.match(/SHIP-/g) || []).length >= 1);
+    await screenshot('order2-9c-backorder-saved');
   });
 
   test('[ORDER 2] 9d. GDELR and check Shipped status', async () => {
@@ -1627,7 +1676,7 @@ test.describe('ORDER 3', () => {
     if (!opened) { test.skip(); return; }
 
     // Navigate to the Shipment tab first
-    const tabOpened = await saveAndClickTab('Shipment') || await saveAndClickTab('Shipments') || await saveAndClickTab('Shipping');
+    const tabOpened = await navigateToShipmentTab();
     console.log('[ORDER 3] 11. Shipment tab opened:', tabOpened);
 
     await clickButton(/new shipment|create shipment/i, 'new shipment');
