@@ -194,6 +194,12 @@ async function screenshot(name: string): Promise<void> {
   try { await page.screenshot({ path: `screenshots/${name}.png` }); } catch {}
 }
 
+// Save any pending changes on the current tab BEFORE switching — Angular discards unsaved tab state on navigation
+async function saveAndClickTab(tabName: string): Promise<boolean> {
+  await saveOrder();
+  return clickTab(tabName);
+}
+
 async function importEDI(
   type: string,
   orderId: string,
@@ -219,7 +225,11 @@ async function importEDI(
 
   if (content && sftp) {
     try {
-      const result = await sftp.uploadEDIContent(content, filename);
+      // CANP and RETP are platform→supplier messages — Sellon reads them from remoteOutDir (dg2partner)
+      const isInbound = ['CANP', 'RETP', 'GORDP'].includes(type.toUpperCase());
+      const result = isInbound
+        ? await sftp.uploadToOutDir(content, filename)
+        : await sftp.uploadEDIContent(content, filename);
       console.log(`[importEDI] SFTP upload result for ${filename}:`, result);
     } catch (e) {
       console.log(`[importEDI] SFTP upload failed:`, e);
@@ -246,7 +256,9 @@ async function waitForSftpFile(pattern: RegExp | string, timeoutMs = 60000): Pro
     return null;
   }
   try {
-    return await sftp.waitForFile(pattern, timeoutMs);
+    // Sellon writes GORDR/GDELR/GCANR/GSURN to remoteInDir (partner2dg), so poll there
+    const inDir = process.env.SFTP_REMOTE_IN_DIR || '/incoming';
+    return await sftp.waitForFile(pattern, timeoutMs, 3000, inDir);
   } catch (e) {
     console.log(`[waitForSftpFile] ${pattern}:`, e);
     return null;
@@ -385,7 +397,7 @@ test.describe('ORDER 1', () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    const tabOpened = await clickTab('Cancellation request');
+    const tabOpened = await saveAndClickTab('Cancellation request');
     const bodyText = await page.locator('body').textContent() || '';
     const hasTab = tabOpened || bodyText.toLowerCase().includes('cancellation') || bodyText.toLowerCase().includes('cancel');
     console.log('[ORDER 1] 4b. Cancellation request tab visible:', hasTab);
@@ -514,7 +526,7 @@ test.describe('ORDER 1', () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    try { await clickTab('Master data'); } catch {
+    try { await saveAndClickTab('Master data'); } catch {
       await ordersPage.navigateToOrders();
       opened = await findAndOpenOrder(ORDER_1);
     }
@@ -649,7 +661,7 @@ test.describe('ORDER 1', () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    await clickTab('Return request');
+    await saveAndClickTab('Return request');
     const bodyText = await page.locator('body').textContent() || '';
     console.log('[ORDER 1] 8b. Return request tab visible:',
       bodyText.toLowerCase().includes('return') || bodyText.toLowerCase().includes('retp'));
@@ -856,7 +868,7 @@ test.describe('ORDER 2', () => {
 
     const positions = order2Positions.length ? order2Positions : [{ sku: 'UNKNOWN', qty: 1 }];
     await importEDI('CANP', ORDER_2, { positions, reason: 'Cancellation' });
-    await clickTab('Cancellation request');
+    await saveAndClickTab('Cancellation request');
     await screenshot('order2-4a-canp-mixed');
   });
 
@@ -1374,7 +1386,7 @@ test.describe('ORDER 3', () => {
 
     const positions = order3Positions.length ? order3Positions : [{ sku: 'UNKNOWN', qty: 1 }];
     await importEDI('CANP', ORDER_3, { positions, reason: 'Cancellation' });
-    await clickTab('Cancellation request');
+    await saveAndClickTab('Cancellation request');
     await screenshot('order3-8a-canp-import');
   });
 
@@ -1516,7 +1528,7 @@ test.describe('ORDER 3', () => {
         ? [{ sku: order3Positions[0].sku, qty: 1 }]
         : [{ sku: 'UNKNOWN', qty: 1 }];
     await importEDI('RETP', ORDER_3, { positions, reason: 'Defective' });
-    await clickTab('Return request');
+    await saveAndClickTab('Return request');
     await screenshot('order3-10a-retp-import');
   });
 
@@ -1586,7 +1598,7 @@ test.describe('ORDER 3', () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    await clickTab('Return request');
+    await saveAndClickTab('Return request');
     const secondSku = order3Positions.length > 1 ? order3Positions[1].sku : order3Positions[0]?.sku || '';
     const rows = page.locator('tbody tr');
     const count = await rows.count();

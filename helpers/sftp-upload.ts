@@ -106,6 +106,25 @@ export class SftpHelper {
     }
   }
 
+  // Upload EDI content to remoteOutDir (platform→supplier: GORDP, GCANP, GRETP)
+  async uploadToOutDir(content: string, remoteFileName: string): Promise<boolean> {
+    if (!this.isConfigured) {
+      console.log('[SFTP] uploadToOutDir skipped — not configured');
+      return false;
+    }
+    try {
+      if (!this.connected) await this.connect();
+      const remotePath = `${this.config.remoteOutDir}/${remoteFileName}`;
+      const buffer = Buffer.from(content, 'utf-8');
+      await this.sftp.put(buffer, remotePath);
+      console.log(`[SFTP] Uploaded content → ${remotePath}`);
+      return true;
+    } catch (e) {
+      console.log(`[SFTP] uploadToOutDir failed:`, (e as Error).message);
+      return false;
+    }
+  }
+
   // List files in a remote directory
   async listFiles(remoteDir: string): Promise<string[]> {
     if (!this.isConfigured) return [];
