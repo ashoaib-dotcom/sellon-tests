@@ -1,0 +1,60 @@
+name: Order Workflow Tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  order-workflow:
+    name: order-workflow
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Create screenshots directory
+        run: mkdir -p screenshots
+
+      - name: Run order-workflow tests
+        run: npx playwright test tests/order-workflow-pom.spec.ts --reporter=html,list
+        env:
+          TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+          BASE_URL: ${{ secrets.BASE_URL }}
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          SFTP_REMOTE_IN_DIR: ${{ secrets.SFTP_REMOTE_IN_DIR }}
+          SFTP_REMOTE_OUT_DIR: ${{ secrets.SFTP_REMOTE_OUT_DIR }}
+          SFTP_SUPPLIER_ID: ${{ secrets.SFTP_SUPPLIER_ID }}
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-order-workflow
+          path: screenshots/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload Playwright HTML report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-order-workflow
+          path: playwright-report/
+          retention-days: 14
