@@ -228,10 +228,19 @@ export class ProductFormPage {
     return false;
   }
 
-  // Click a tab (Master data, Price & stock, Media, etc.)
+  // Click a form tab (Master data, Price & stock, Media, etc.)
   async clickTab(tabName: string) {
-    await this.page.getByText(tabName, { exact: true }).click();
-    await this.page.waitForTimeout(3000);
+    // Prefer role="tab" — avoids accidentally clicking sidebar nav items with the same text
+    const roleTab = this.page.getByRole('tab', { name: tabName, exact: true });
+    if (await roleTab.count() > 0 && await roleTab.first().isVisible({ timeout: 3000 }).catch(() => false)) {
+      await roleTab.first().click();
+    } else {
+      // Fallback: filter visible text elements that are not inside [role="navigation"]
+      const textEl = this.page.getByText(tabName, { exact: true }).filter({ visible: true }).first();
+      await textEl.click();
+    }
+    // Wait for Angular tab panel content to render
+    await this.page.waitForTimeout(4000);
   }
 
   // Click Save button
