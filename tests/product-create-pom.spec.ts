@@ -282,6 +282,8 @@ test('Step 19: Zero price rejected', async () => {
 test('Step 20: Final save with all valid data', async () => {
   test.setTimeout(120000);
   await productForm.clickSave();
+  // Switch to Master data tab so the Provider key (SKU) is rendered in the DOM
+  await productForm.clickTab('Master data');
   await productForm.expectBodyContains(TEST_SKU);
   try { await page.screenshot({ path: 'screenshots/pom-create-20-final.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 20 PASSED');

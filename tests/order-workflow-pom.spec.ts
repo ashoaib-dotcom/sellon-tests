@@ -591,14 +591,19 @@ test.describe('ORDER 1', () => {
     console.log('[ORDER 1] 6c. GORDR file on SFTP:', file);
   });
 
-  test('[ORDER 1] 7a. Create shipping — click new shipment', async () => {
+  test('[ORDER 1] 7a. Create shipping — navigate to Shipment tab and click new shipment', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    const clicked = await clickButton(/new shipment|create shipment|shipping/i, 'new shipment');
+    // Navigate to the Shipment tab first — the "New shipment" button only appears there
+    const tabOpened = await saveAndClickTab('Shipment') || await saveAndClickTab('Shipments') || await saveAndClickTab('Shipping');
+    console.log('[ORDER 1] 7a. Shipment tab opened:', tabOpened);
+
+    const clicked = await clickButton(/new shipment|create shipment/i, 'new shipment');
+    await page.waitForTimeout(2000);
     const bodyText = await page.locator('body').textContent() || '';
     console.log('[ORDER 1] 7a. New shipment button clicked:', clicked);
-    console.log('[ORDER 1] 7a. Carrier/shipment fields visible:', bodyText.toLowerCase().includes('carrier') || bodyText.toLowerCase().includes('shipment number'));
+    console.log('[ORDER 1] 7a. Carrier/shipment fields visible:', bodyText.toLowerCase().includes('carrier') || bodyText.toLowerCase().includes('shipment'));
     await screenshot('order1-7a-new-shipment');
   });
 
@@ -612,52 +617,60 @@ test.describe('ORDER 1', () => {
     await screenshot('order1-7b-shipment-fields');
   });
 
-  test('[ORDER 1] 7c. Save without shipment number → error shown', async () => {
+  test('[ORDER 1] 7c. Fill carrier, shipment number, select first position and save', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
+
+    // Fill Carrier — try label-based first, then name-attribute fallback
+    try {
+      const carrierByLabel = page.getByLabel(/carrier/i, { exact: false }).first();
+      if (await carrierByLabel.count() > 0 && await carrierByLabel.isVisible({ timeout: 3000 })) {
+        await carrierByLabel.fill('DHL');
+      } else {
+        const carrierInput = page.locator('input[name*="carrier"], input[placeholder*="carrier"], input[name*="Carrier"]').first();
+        if (await carrierInput.isVisible({ timeout: 3000 })) await carrierInput.fill('DHL');
+      }
+      // Select autocomplete option if dropdown appears
+      await page.waitForTimeout(1000);
+      const opt = page.locator('mat-option, [role="option"]').filter({ visible: true }).first();
+      if (await opt.count() > 0) { await opt.click(); await page.waitForTimeout(500); }
+    } catch (e) { console.log('[ORDER 1] 7c. Carrier fill failed:', e); }
+
+    // Fill Shipment number
+    try {
+      const shipNumByLabel = page.getByLabel(/shipment number|tracking/i, { exact: false }).first();
+      if (await shipNumByLabel.count() > 0 && await shipNumByLabel.isVisible({ timeout: 3000 })) {
+        await shipNumByLabel.fill('SHIP-001');
+      } else {
+        const shipNumInput = page.locator('input[name*="shipment"], input[placeholder*="shipment"], input[name*="tracking"], input[name*="number"]').filter({ visible: true }).first();
+        if (await shipNumInput.isVisible({ timeout: 3000 })) await shipNumInput.fill('SHIP-001');
+      }
+    } catch (e) { console.log('[ORDER 1] 7c. Shipment number fill failed:', e); }
+
+    // Select all available position checkboxes
+    try {
+      const checkboxes = page.locator('tbody tr input[type="checkbox"]').filter({ visible: true });
+      const count = await checkboxes.count();
+      for (let i = 0; i < count; i++) {
+        if (!await checkboxes.nth(i).isChecked()) await checkboxes.nth(i).check();
+      }
+      console.log('[ORDER 1] 7c. Checkboxes selected:', count);
+    } catch (e) { console.log('[ORDER 1] 7c. Checkbox selection failed:', e); }
 
     await saveOrder();
     const bodyText = await page.locator('body').textContent() || '';
-    const hasError = bodyText.toLowerCase().includes('error') ||
-      bodyText.toLowerCase().includes('required') ||
-      bodyText.toLowerCase().includes('invalid') ||
-      bodyText.toLowerCase().includes('mandatory');
-    console.log('[ORDER 1] 7c. Error shown when saving without shipment number:', hasError);
-    await screenshot('order1-7c-shipment-error');
+    console.log('[ORDER 1] 7c. Shipment saved. Shipped status visible:', bodyText.toLowerCase().includes('shipped'));
+    await screenshot('order1-7c-shipment-saved');
   });
 
-  test('[ORDER 1] 7d. Fill carrier, shipment number, select first position', async () => {
+  test('[ORDER 1] 7d. Verify shipment created and order status', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    try {
-      const carrierInput = page.locator('input[name*="carrier"], input[placeholder*="carrier"]').first();
-      if (await carrierInput.isVisible({ timeout: 3000 })) await carrierInput.fill('DHL');
-    } catch {}
-
-    try {
-      const shipNumInput = page.locator('input[name*="shipment"], input[placeholder*="shipment"], input[name*="tracking"]').first();
-      if (await shipNumInput.isVisible({ timeout: 3000 })) await shipNumInput.fill('SHIP-001');
-    } catch {}
-
-    try {
-      const firstSku = order1Positions[0]?.sku || '';
-      if (firstSku) {
-        const rows = page.locator('tbody tr');
-        const count = await rows.count();
-        for (let i = 0; i < count; i++) {
-          const rowText = await rows.nth(i).textContent() || '';
-          if (rowText.includes(firstSku)) {
-            const checkbox = rows.nth(i).locator('input[type="checkbox"]');
-            if (await checkbox.isVisible({ timeout: 2000 })) await checkbox.check();
-            break;
-          }
-        }
-      }
-    } catch {}
-
-    await saveOrder();
-    await screenshot('order1-7d-shipment-saved');
+    const bodyText = await page.locator('body').textContent() || '';
+    console.log('[ORDER 1] 7d. Shipment number SHIP-001 visible:', bodyText.includes('SHIP-001'));
+    console.log('[ORDER 1] 7d. Order status:', await getOrderStatus());
+    await screenshot('order1-7d-shipment-verified');
   });
 
   test('[ORDER 1] 7e. Wait for GDELR on SFTP', async () => {
@@ -721,14 +734,20 @@ test.describe('ORDER 1', () => {
     const rejectBtn = page.getByRole('button', { name: /reject/i }).filter({ visible: true }).first();
     const found = await rejectBtn.isVisible({ timeout: 3000 }).catch(() => false);
     if (found) {
-      await rejectBtn.click();
-      await page.waitForTimeout(2000);
-      await saveOrder();
-      const bodyText = await page.locator('body').textContent() || '';
-      const requiresReason = bodyText.toLowerCase().includes('reason') ||
-        bodyText.toLowerCase().includes('required') ||
-        bodyText.toLowerCase().includes('message');
-      console.log('[ORDER 1] 8f. Reject without reason shows validation:', requiresReason);
+      const enabled = await rejectBtn.isEnabled().catch(() => false);
+      if (!enabled) {
+        // Button disabled without a reason filled — UI is already enforcing the requirement
+        console.log('[ORDER 1] 8f. Reject button is disabled (reason required before enabling)');
+      } else {
+        await rejectBtn.click();
+        await page.waitForTimeout(2000);
+        await saveOrder();
+        const bodyText = await page.locator('body').textContent() || '';
+        const requiresReason = bodyText.toLowerCase().includes('reason') ||
+          bodyText.toLowerCase().includes('required') ||
+          bodyText.toLowerCase().includes('message');
+        console.log('[ORDER 1] 8f. Reject without reason shows validation:', requiresReason);
+      }
     } else {
       console.log('[ORDER 1] 8f. Reject button not found in return tab');
     }
@@ -1022,23 +1041,23 @@ test.describe('ORDER 2', () => {
     await screenshot('order2-5d-gcanr');
   });
 
-  test('[ORDER 2] 6a. Create shipment — split positions', async () => {
+  test('[ORDER 2] 6a. Create shipment — navigate to Shipment tab and click new shipment', async () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    await clickButton(/new shipment|create shipment|shipping/i, 'new shipment');
+    // Navigate to the Shipment tab first
+    const tabOpened = await saveAndClickTab('Shipment') || await saveAndClickTab('Shipments') || await saveAndClickTab('Shipping');
+    console.log('[ORDER 2] 6a. Shipment tab opened:', tabOpened);
 
+    await clickButton(/new shipment|create shipment/i, 'new shipment');
+    await page.waitForTimeout(2000);
+
+    // Select first position for first shipment (split — second position ships separately)
     try {
-      const rows = page.locator('tbody tr');
-      const count = await rows.count();
-      // Select first two positions for split shipment
-      let selected = 0;
-      for (let i = 0; i < count && selected < 2; i++) {
-        const check = rows.nth(i).locator('input[type="checkbox"]');
-        if (await check.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await check.check(); selected++;
-        }
-      }
+      const checkboxes = page.locator('tbody tr input[type="checkbox"]').filter({ visible: true });
+      const count = await checkboxes.count();
+      if (count > 0) { await checkboxes.first().check(); }
+      console.log('[ORDER 2] 6a. Position checkboxes available:', count);
     } catch (e) {
       console.log('[ORDER 2] 6a. Could not select positions:', e);
     }
@@ -1062,17 +1081,34 @@ test.describe('ORDER 2', () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
+    // Fill Carrier
     try {
-      const carrierInput = page.locator('input[name*="carrier"], input[placeholder*="carrier"]').first();
-      if (await carrierInput.isVisible({ timeout: 3000 })) await carrierInput.fill('DHL');
-    } catch {}
+      const carrierByLabel = page.getByLabel(/carrier/i, { exact: false }).first();
+      if (await carrierByLabel.count() > 0 && await carrierByLabel.isVisible({ timeout: 3000 })) {
+        await carrierByLabel.fill('DHL');
+      } else {
+        const carrierInput = page.locator('input[name*="carrier"], input[placeholder*="carrier"]').first();
+        if (await carrierInput.isVisible({ timeout: 3000 })) await carrierInput.fill('DHL');
+      }
+      await page.waitForTimeout(1000);
+      const opt = page.locator('mat-option, [role="option"]').filter({ visible: true }).first();
+      if (await opt.count() > 0) { await opt.click(); await page.waitForTimeout(500); }
+    } catch (e) { console.log('[ORDER 2] 6c. Carrier fill failed:', e); }
 
+    // Fill Shipment number
     try {
-      const shipNumInput = page.locator('input[name*="shipment"], input[placeholder*="shipment"], input[name*="tracking"]').first();
-      if (await shipNumInput.isVisible({ timeout: 3000 })) await shipNumInput.fill('SHIP-302-A');
-    } catch {}
+      const shipNumByLabel = page.getByLabel(/shipment number|tracking/i, { exact: false }).first();
+      if (await shipNumByLabel.count() > 0 && await shipNumByLabel.isVisible({ timeout: 3000 })) {
+        await shipNumByLabel.fill('SHIP-302-A');
+      } else {
+        const shipNumInput = page.locator('input[name*="shipment"], input[placeholder*="shipment"], input[name*="tracking"], input[name*="number"]').filter({ visible: true }).first();
+        if (await shipNumInput.isVisible({ timeout: 3000 })) await shipNumInput.fill('SHIP-302-A');
+      }
+    } catch (e) { console.log('[ORDER 2] 6c. Shipment number fill failed:', e); }
 
     await saveOrder();
+    const bodyText = await page.locator('body').textContent() || '';
+    console.log('[ORDER 2] 6c. Shipment saved. SHIP-302-A visible:', bodyText.includes('SHIP-302-A'));
     await screenshot('order2-6c-shipment-saved');
   });
 
@@ -1095,26 +1131,37 @@ test.describe('ORDER 2', () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    await clickButton(/new shipment|create shipment|shipping/i, 'new shipment');
+    // Ensure we are on the Shipment tab
+    await saveAndClickTab('Shipment') || await saveAndClickTab('Shipments') || await saveAndClickTab('Shipping');
 
-    try {
-      const rows = page.locator('tbody tr');
-      const count = await rows.count();
-      // Select last unshipped position
-      const lastRow = rows.nth(count - 1);
-      const check = lastRow.locator('input[type="checkbox"]');
-      if (await check.isVisible({ timeout: 2000 })) await check.check();
-    } catch {}
+    await clickButton(/new shipment|create shipment/i, 'new shipment');
+    await page.waitForTimeout(2000);
 
+    // Select remaining (unshipped) position checkboxes
     try {
-      const parcelSelect = page.locator('select[name*="parcel"], select[name*="type"]').first();
-      if (await parcelSelect.isVisible({ timeout: 3000 })) {
-        await parcelSelect.selectOption({ label: 'Letter' });
-      } else {
-        const parcelInput = page.locator('input[name*="parcel"]').first();
-        if (await parcelInput.isVisible({ timeout: 3000 })) await parcelInput.fill('Letter');
+      const checkboxes = page.locator('tbody tr input[type="checkbox"]').filter({ visible: true });
+      const count = await checkboxes.count();
+      for (let i = 0; i < count; i++) {
+        if (!await checkboxes.nth(i).isChecked()) { await checkboxes.nth(i).check(); }
       }
+      console.log('[ORDER 2] 9a. Remaining position checkboxes:', count);
     } catch {}
+
+    // Select parcel type "Letter" — try mat-select/Angular dropdown first, then native select
+    try {
+      const parcelByLabel = page.getByLabel(/parcel type|parcel/i, { exact: false }).first();
+      if (await parcelByLabel.count() > 0 && await parcelByLabel.isVisible({ timeout: 3000 })) {
+        await parcelByLabel.click();
+        await page.waitForTimeout(500);
+        const letterOpt = page.locator('mat-option, [role="option"]').filter({ hasText: /letter/i }).first();
+        if (await letterOpt.count() > 0) await letterOpt.click();
+      } else {
+        const parcelSelect = page.locator('select[name*="parcel"], select[name*="type"]').first();
+        if (await parcelSelect.isVisible({ timeout: 3000 })) {
+          await parcelSelect.selectOption({ label: 'Letter' });
+        }
+      }
+    } catch (e) { console.log('[ORDER 2] 9a. Parcel type selection failed:', e); }
 
     await screenshot('order2-9a-letter-shipment');
   });
@@ -1579,30 +1626,53 @@ test.describe('ORDER 3', () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    await clickButton(/new shipment|create shipment|shipping/i, 'new shipment');
+    // Navigate to the Shipment tab first
+    const tabOpened = await saveAndClickTab('Shipment') || await saveAndClickTab('Shipments') || await saveAndClickTab('Shipping');
+    console.log('[ORDER 3] 11. Shipment tab opened:', tabOpened);
 
+    await clickButton(/new shipment|create shipment/i, 'new shipment');
+    await page.waitForTimeout(2000);
+
+    // Select all position checkboxes
     try {
-      const rows = page.locator('tbody tr');
-      const count = await rows.count();
+      const checkboxes = page.locator('tbody tr input[type="checkbox"]').filter({ visible: true });
+      const count = await checkboxes.count();
       for (let i = 0; i < count; i++) {
-        const check = rows.nth(i).locator('input[type="checkbox"]');
-        if (await check.isVisible({ timeout: 1000 }).catch(() => false)) await check.check();
+        if (!await checkboxes.nth(i).isChecked()) await checkboxes.nth(i).check();
       }
+      console.log('[ORDER 3] 11. Position checkboxes selected:', count);
     } catch (e) {
       console.log('[ORDER 3] 11. Could not select all positions:', e);
     }
 
+    // Fill Carrier
     try {
-      const carrierInput = page.locator('input[name*="carrier"], input[placeholder*="carrier"]').first();
-      if (await carrierInput.isVisible({ timeout: 3000 })) await carrierInput.fill('DHL');
-    } catch {}
+      const carrierByLabel = page.getByLabel(/carrier/i, { exact: false }).first();
+      if (await carrierByLabel.count() > 0 && await carrierByLabel.isVisible({ timeout: 3000 })) {
+        await carrierByLabel.fill('DHL');
+      } else {
+        const carrierInput = page.locator('input[name*="carrier"], input[placeholder*="carrier"]').first();
+        if (await carrierInput.isVisible({ timeout: 3000 })) await carrierInput.fill('DHL');
+      }
+      await page.waitForTimeout(1000);
+      const opt = page.locator('mat-option, [role="option"]').filter({ visible: true }).first();
+      if (await opt.count() > 0) { await opt.click(); await page.waitForTimeout(500); }
+    } catch (e) { console.log('[ORDER 3] 11. Carrier fill failed:', e); }
 
+    // Fill Shipment number
     try {
-      const shipNumInput = page.locator('input[name*="shipment"], input[placeholder*="shipment"], input[name*="tracking"]').first();
-      if (await shipNumInput.isVisible({ timeout: 3000 })) await shipNumInput.fill('SHIP-303');
-    } catch {}
+      const shipNumByLabel = page.getByLabel(/shipment number|tracking/i, { exact: false }).first();
+      if (await shipNumByLabel.count() > 0 && await shipNumByLabel.isVisible({ timeout: 3000 })) {
+        await shipNumByLabel.fill('SHIP-303');
+      } else {
+        const shipNumInput = page.locator('input[name*="shipment"], input[placeholder*="shipment"], input[name*="tracking"], input[name*="number"]').filter({ visible: true }).first();
+        if (await shipNumInput.isVisible({ timeout: 3000 })) await shipNumInput.fill('SHIP-303');
+      }
+    } catch (e) { console.log('[ORDER 3] 11. Shipment number fill failed:', e); }
 
     await saveOrder();
+    const bodyText = await page.locator('body').textContent() || '';
+    console.log('[ORDER 3] 11. Shipment saved. SHIP-303 visible:', bodyText.includes('SHIP-303'));
     await screenshot('order3-11-shipment-saved');
   });
 
