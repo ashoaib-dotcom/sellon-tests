@@ -29,6 +29,7 @@ let sftp: SftpHelper;
 // Returns up to `count` order IDs found in the orders grid
 async function discoverOrders(count = 3): Promise<string[]> {
   try {
+    await ensureLoggedIn();
     await ordersPage.navigateToOrders();
     await page.waitForTimeout(3000);
 
@@ -93,6 +94,7 @@ function sftpPat(type: string, orderId: string): RegExp {
 
 async function findAndOpenOrder(orderId: string): Promise<boolean> {
   try {
+    await ensureLoggedIn();
     await ordersPage.navigateToOrders();
     await page.waitForTimeout(3000);
 
@@ -187,7 +189,24 @@ async function saveOrder(): Promise<void> {
   } catch {
     await clickButton(/save/i, 'save');
   }
-  await page.waitForTimeout(8000);
+  await page.waitForTimeout(4000);
+}
+
+// Re-authenticate if the session has expired (menu-icon absent = logged out)
+async function ensureLoggedIn(): Promise<void> {
+  try {
+    const visible = await page.locator('.menu-icon').isVisible({ timeout: 4000 });
+    if (visible) return;
+  } catch {}
+  console.log('[AUTH] Session appears expired — re-logging in');
+  try {
+    await loginPage.login(
+      process.env.TEST_USERNAME || 'ashoaib',
+      process.env.TEST_PASSWORD || 'test2',
+    );
+  } catch (e) {
+    console.log('[AUTH] Re-login failed:', (e as Error).message);
+  }
 }
 
 async function screenshot(name: string): Promise<void> {
@@ -345,11 +364,11 @@ test.describe('ORDER 1', () => {
     opened = await findAndOpenOrder(ORDER_1);
     if (!opened) { test.skip(); return; }
 
-    // Extract positions while order is open
+    // Extract positions while order is open (opens Order items tab)
     order1Positions = await extractPositions();
     console.log(`[ORDER 1] positions extracted: ${order1Positions.map(p => p.sku).join(', ') || 'none'}`);
 
-    await clickTab('Order parties');
+    // Delivery address is visible on the order detail page — no tab switch needed
     const bodyText = await page.locator('body').textContent() || '';
     const hasAddress = bodyText.toLowerCase().includes('delivery') ||
       bodyText.toLowerCase().includes('address') ||
@@ -832,11 +851,11 @@ test.describe('ORDER 2', () => {
     opened = await findAndOpenOrder(ORDER_2);
     if (!opened) { test.skip(); return; }
 
-    // Extract positions while order is open
+    // Extract positions while order is open (opens Order items tab)
     order2Positions = await extractPositions();
     console.log(`[ORDER 2] positions extracted: ${order2Positions.map(p => p.sku).join(', ') || 'none'}`);
 
-    await clickTab('Order parties');
+    // Delivery address is visible on the order detail page — no tab switch needed
     const bodyText = await page.locator('body').textContent() || '';
     const hasAddress = bodyText.toLowerCase().includes('delivery') ||
       bodyText.toLowerCase().includes('address') ||
@@ -1249,11 +1268,11 @@ test.describe('ORDER 3', () => {
     test.setTimeout(120000);
     if (!opened) { test.skip(); return; }
 
-    // Extract positions while order is open
+    // Extract positions while order is open (opens Order items tab)
     order3Positions = await extractPositions();
     console.log(`[ORDER 3] positions extracted: ${order3Positions.map(p => p.sku).join(', ') || 'none'}`);
 
-    await clickTab('Order parties');
+    // Delivery address is visible on the order detail page — no tab switch needed
     const bodyText = await page.locator('body').textContent() || '';
     const hasAddress = bodyText.toLowerCase().includes('delivery') ||
       bodyText.toLowerCase().includes('address') ||
