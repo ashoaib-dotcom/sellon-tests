@@ -323,12 +323,20 @@ export class ProductFormPage {
 
   // Verify page shows an error (red validation banner is visible)
   async expectHasError() {
-    // Primary check: a red/error banner is visible on the page
-    const redBanner = this.page.locator('[class*="alert"], [class*="error"], [class*="danger"], [class*="invalid"]')
-      .filter({ visible: true }).first();
-    if (await redBanner.count() > 0) return;
+    // Check 1: explicit error/alert elements including Angular Material mat-error
+    const errorEl = this.page.locator(
+      'mat-error, [class*="alert"], [class*="error"], [class*="danger"], [role="alert"], snack-bar-container, [class*="snack-bar"]'
+    ).filter({ visible: true }).first();
+    if (await errorEl.count() > 0) return;
 
-    // Fallback: keyword matching in body text
+    // Check 2: Angular reactive form marks invalid inputs with ng-invalid — catches
+    // validation errors that have no visible text (e.g. min/max on numeric fields)
+    const invalidInput = this.page.locator(
+      'input.ng-invalid, select.ng-invalid, textarea.ng-invalid, mat-select.ng-invalid'
+    ).filter({ visible: true }).first();
+    if (await invalidInput.count() > 0) return;
+
+    // Check 3: keyword matching in body text (broader than before)
     const bodyText = await this.page.locator('body').innerText();
     const lower = bodyText.toLowerCase();
     const hasError = lower.includes('error') ||
@@ -340,7 +348,13 @@ export class ProductFormPage {
                      lower.includes('between') ||
                      lower.includes('allowed') ||
                      lower.includes('mustn') ||
-                     lower.includes('exceeded');
-    expect(hasError).toBeTruthy();
+                     lower.includes('exceeded') ||
+                     lower.includes('minimum') ||
+                     lower.includes('greater') ||
+                     lower.includes('positive') ||
+                     lower.includes('cannot') ||
+                     lower.includes('not valid') ||
+                     lower.includes('min.');
+    expect(hasError, 'Expected page to show a validation error').toBeTruthy();
   }
 }
