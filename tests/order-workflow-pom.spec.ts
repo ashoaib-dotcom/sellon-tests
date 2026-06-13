@@ -1,10 +1,8 @@
 import { test, expect, chromium, Page, Browser } from '@playwright/test';
 import { LoginPage } from '../pages/login.page';
-import { NavigationPage } from '../pages/navigation.page';
 import { OrdersPage } from '../pages/orders.page';
-import { ProductListPage } from '../pages/product-list.page';
 import { getSftpHelper, SftpHelper } from '../helpers/sftp-upload';
-import { buildGORDR, buildGDELR, buildGCANR, buildGSURN, buildGCANP, buildGRETP, buildGORDP } from '../helpers/edi-builder';
+import { buildGORDR, buildGDELR, buildGCANR, buildGSURN, buildGCANP, buildGRETP } from '../helpers/edi-builder';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -18,9 +16,7 @@ let orderPositions: { sku: string; qty: number }[][] = [];
 let browser: Browser;
 let page: Page;
 let loginPage: LoginPage;
-let navPage: NavigationPage;
 let ordersPage: OrdersPage;
-let productListPage: ProductListPage;
 let sftp: SftpHelper;
 
 // ===========================================================================
@@ -290,107 +286,6 @@ async function createShipment(opts: {
   return true;
 }
 
-// Fetch real Stage 2 products from the Sellon Products tab.
-// Returns up to `maxCount` products with their provider key (SKU) and selling price.
-async function fetchStage2Products(maxCount = 5): Promise<{ sku: string; price: number }[]> {
-  try {
-    await navPage.navigateToProducts();
-    await page.waitForTimeout(3000);
-
-    const products: { sku: string; price: number }[] = [];
-    const rows = page.locator('tbody tr');
-    const rowCount = Math.min(await rows.count(), 50);
-
-    for (let i = 0; i < rowCount && products.length < maxCount; i++) {
-      const row = rows.nth(i);
-      const rowText = await row.textContent() || '';
-
-      // Only include Stage 2 products (ready for ordering)
-      if (!rowText.toLowerCase().includes('stage 2')) continue;
-
-      const cells = await row.locator('td').allInnerTexts();
-
-      // Provider key looks like "XX-YYY-001" (contains at least one hyphen, no spaces, uppercase)
-      const sku = cells.find(c => /^[A-Z0-9]+-[A-Z0-9-]+$/.test(c.trim())) || '';
-
-      // Price column — find a cell that looks like a decimal number
-      const priceCell = cells.find(c => /^\d+[.,]\d+$/.test(c.trim())) || '';
-      const price = parseFloat(priceCell.replace(',', '.')) || 29.90;
-
-      if (sku) {
-        products.push({ sku: sku.trim(), price });
-        console.log(`  fetchStage2Products: found ${sku.trim()} @ ${price}`);
-      }
-    }
-
-    console.log(`[fetchStage2Products] ${products.length} Stage 2 product(s) found`);
-    return products;
-  } catch (e) {
-    console.log('[fetchStage2Products] Error:', (e as Error).message);
-    return [];
-  }
-}
-
-// Upload a GORDP file using real Stage 2 products to create a new order in Sellon,
-// then wait for it to appear in the orders list.
-// Returns the new order ID, or null if SFTP is not configured or the order never appears.
-async function createTestOrder(
-  stage2Products: { sku: string; price: number }[],
-): Promise<string | null> {
-  if (!sftp?.isConfigured) {
-    console.log('[createTestOrder] SFTP not configured — skipping order creation');
-    return null;
-  }
-  if (stage2Products.length === 0) {
-    console.log('[createTestOrder] No Stage 2 products available — skipping');
-    return null;
-  }
-
-  const orderId = `ORD-${Date.now().toString().slice(-8)}`;
-
-  // Use up to 2 real products per order so the split-shipment path is exercised
-  const positions = stage2Products.slice(0, 2).map((p, idx) => ({
-    sku:   p.sku,
-    qty:   idx === 0 ? 2 : 1,   // first position: qty 2 (partial ship); second: qty 1 (back-order)
-    price: p.price,
-  }));
-
-  const address = {
-    name:    'Test Customer',
-    street:  'Teststrasse 1',
-    city:    'Zurich',
-    zip:     '8001',
-    country: 'CH',
-  };
-
-  try {
-    const ediFile = buildGORDP(orderId, positions, address);
-    // GORDP is platform → supplier: upload to remoteOutDir (dg2partner)
-    const ok = await sftp.uploadToOutDir(ediFile.content, ediFile.filename);
-    if (!ok) { console.log('[createTestOrder] SFTP upload failed'); return null; }
-    console.log(`[createTestOrder] Uploaded ${ediFile.filename} (${positions.map(p => p.sku).join(', ')})`);
-  } catch (e) {
-    console.log('[createTestOrder] Build/upload error:', (e as Error).message);
-    return null;
-  }
-
-  // Poll the orders list until the new order appears (up to 90 s)
-  await ordersPage.navigateToOrders();
-  const deadline = Date.now() + 90000;
-  while (Date.now() < deadline) {
-    await page.waitForTimeout(5000);
-    await page.reload();
-    await page.waitForTimeout(2000);
-    const body = await page.locator('body').textContent() || '';
-    if (body.includes(orderId)) {
-      console.log(`[createTestOrder] Order ${orderId} appeared in Sellon`);
-      return orderId;
-    }
-  }
-
-  console.log(`[createTestOrder] Timeout — order ${orderId} never appeared`);
-  return null;
-}
 
 async function discoverOrders(maxCount = MAX_ORDERS): Promise<string[]> {
   try {
@@ -527,6 +422,8 @@ async function waitForSftpFile(pattern: RegExp | string, timeoutMs = 60000): Pro
 // ===========================================================================
 
 test.beforeAll(async () => {
+  test.setTimeout(600000);
+
   browser = await chromium.launch({
     headless: true,
     args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
@@ -534,40 +431,14 @@ test.beforeAll(async () => {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   page = await context.newPage();
   loginPage = new LoginPage(page);
-  navPage = new NavigationPage(page);
   ordersPage = new OrdersPage(page);
-  productListPage = new ProductListPage(page);
   sftp = getSftpHelper();
 
   await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
   await page.waitForTimeout(3000);
 
-  // If SFTP is configured: fetch real Stage 2 products then upload GORDP files to
-  // create fresh test orders in Sellon. Fully automated — no manual setup required.
-  const orderCount = parseInt(process.env.TEST_ORDER_COUNT || '2', 10);
-  if (sftp.isConfigured) {
-    console.log(`[setup] Fetching Stage 2 products to use as order positions...`);
-    const stage2Products = await fetchStage2Products(orderCount * 2);
-
-    if (stage2Products.length > 0) {
-      console.log(`[setup] Creating ${orderCount} order(s) from ${stage2Products.length} Stage 2 product(s)`);
-      for (let i = 0; i < orderCount; i++) {
-        // Rotate through available products so each order uses a different pair
-        const slice = stage2Products.slice((i * 2) % stage2Products.length);
-        const orderId = await createTestOrder(slice);
-        if (orderId) orders.push(orderId);
-      }
-      console.log(`[setup] Created ${orders.length} order(s): ${orders.join(', ')}`);
-    } else {
-      console.log('[setup] No Stage 2 products found — skipping GORDP creation');
-    }
-  }
-
-  // Fall back to discovering existing orders if SFTP is absent or creation failed
-  if (orders.length === 0) {
-    console.log('[setup] Falling back to discovering existing orders in Sellon');
-    orders = await discoverOrders(MAX_ORDERS);
-  }
+  // Discover existing orders in Sellon
+  orders = await discoverOrders(MAX_ORDERS);
 
   orderPositions = Array.from({ length: MAX_ORDERS }, () => []);
   console.log(`Orders ready (${orders.length}): ${orders.join(', ') || 'none'}`);
