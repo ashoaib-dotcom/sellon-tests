@@ -40,8 +40,6 @@ jobs:
             file: tests/product-edit-pom.spec.ts
           - test-suite: product-create
             file: tests/product-create-pom.spec.ts
-          - test-suite: product-delete
-            file: tests/product-delete-pom.spec.ts
           - test-suite: product-import
             file: tests/product-import-pom.spec.ts
           - test-suite: stock-import
@@ -54,6 +52,8 @@ jobs:
             file: tests/order-workflow-pom.spec.ts
           - test-suite: sftp-upload
             file: tests/sftp-upload-pom.spec.ts
+          - test-suite: product-delete
+            file: tests/product-delete-pom.spec.ts
 
     steps:
       - name: Checkout repository

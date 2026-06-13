@@ -7,7 +7,7 @@ export interface EdiFile {
   filename: string;
 }
 
-const supplierId = () => process.env.SFTP_SUPPLIER_ID || 'SUPPLIER001';
+const supplierId = () => process.env.SFTP_SUPPLIER_ID || '223344';
 const ts = () => new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14); // YYYYMMDDHHmmss
 
 // ─── GORDR — Order Confirmation (supplier → platform) ─────────────────────────

@@ -161,33 +161,88 @@ export class ProductFormPage {
     return false;
   }
 
-  // Select the first available option in the Category custom dropdown (best-effort)
+  // Select a category from the dropdown.
+  // Strategy:
+  //   1. Click the dropdown arrow button to open the panel and wait for options
+  //   2. If options appear, click the first one
+  //   3. If no options appear, search for a known category name and select it
   async selectFirstCategory(): Promise<boolean> {
+    const searchTerms = ['3D Printer', '3D Printers', '3D Scanner', '3D Scanners', 'Electronics', 'Accessories'];
+
     try {
-      const idx = await this.findInputIndex('Category');
-      if (idx < 0) {
-        console.log('  Category → label not found, skipping');
-        return false;
+      // Find the Category field container — look for the arrow/chevron toggle button
+      const arrowBtn = this.page.locator(
+        '[class*="category"] button, [formcontrolname*="category"] button, ' +
+        'mat-select[formcontrolname*="category"], ' +
+        'label:has-text("Category") ~ * button, ' +
+        'label:has-text("Category") + * button'
+      ).filter({ visible: true }).first();
+
+      if (await arrowBtn.count() > 0) {
+        await arrowBtn.click();
+      } else {
+        // Fallback: click the input associated with the Category label
+        const idx = await this.findInputIndex('Category');
+        if (idx >= 0) {
+          const input = this.page.locator(
+            'input:not([type="hidden"]):not([type="checkbox"]), textarea'
+          ).nth(idx);
+          await input.click();
+        } else {
+          // Last resort: click any visible mat-select or select labelled "Category"
+          const matSelect = this.page.getByLabel('Category', { exact: false }).first();
+          if (await matSelect.count() > 0) await matSelect.click();
+        }
       }
 
-      const input = this.page.locator(
-        'input:not([type="hidden"]):not([type="checkbox"]), textarea'
-      ).nth(idx);
+      // Wait for the dropdown panel / options to appear
+      await this.page.waitForTimeout(3000);
 
-      await input.click();
-      await this.page.waitForTimeout(500);
-      await input.fill('A');
-      await this.page.waitForTimeout(2500);
-      await this.page.keyboard.press('ArrowDown');
-      await this.page.waitForTimeout(300);
-      await this.page.keyboard.press('Enter');
-      await this.page.waitForTimeout(500);
+      // Try selecting the first visible option from the open panel
+      const optionLocator = this.page.locator(
+        'mat-option, [role="option"], .ng-option, [class*="dropdown"] li, [class*="autocomplete"] li'
+      ).filter({ visible: true }).first();
 
-      console.log('  Category → attempted via typeahead "A" + ArrowDown + Enter');
-    } catch {
-      console.log('  Category → selection skipped (best-effort only)');
+      if (await optionLocator.count() > 0) {
+        await optionLocator.click();
+        await this.page.waitForTimeout(500);
+        console.log('  Category → selected first option from open panel');
+        return true;
+      }
+
+      // No options appeared — try searching for known category names
+      const idx = await this.findInputIndex('Category');
+      if (idx >= 0) {
+        const input = this.page.locator(
+          'input:not([type="hidden"]):not([type="checkbox"]), textarea'
+        ).nth(idx);
+
+        for (const term of searchTerms) {
+          await input.fill(term);
+          await this.page.waitForTimeout(2500);
+
+          const opt = this.page.locator(
+            'mat-option, [role="option"], .ng-option, [class*="dropdown"] li'
+          ).filter({ visible: true }).first();
+
+          if (await opt.count() > 0) {
+            await opt.click();
+            await this.page.waitForTimeout(500);
+            console.log(`  Category → selected via search "${term}"`);
+            return true;
+          }
+
+          // Clear and try next term
+          await input.fill('');
+          await this.page.waitForTimeout(500);
+        }
+      }
+
+      console.log('  Category → no options found after all attempts');
+    } catch (e) {
+      console.log('  Category → selection failed:', e);
     }
-    return true;
+    return false;
   }
 
   // Navigate to the Media tab and add an image URL
