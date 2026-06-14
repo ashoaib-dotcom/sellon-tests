@@ -18,7 +18,7 @@ on:
 jobs:
   test:
     name: ${{ matrix.test-suite }}
-    timeout-minutes: 30
+    timeout-minutes: ${{ matrix.job_timeout || 30 }}
     runs-on: ubuntu-latest
 
     strategy:
@@ -50,6 +50,7 @@ jobs:
             file: tests/product-validations-pom.spec.ts
           - test-suite: order-workflow
             file: tests/order-workflow-pom.spec.ts
+            job_timeout: 90
           - test-suite: sftp-upload
             file: tests/sftp-upload-pom.spec.ts
           - test-suite: product-delete

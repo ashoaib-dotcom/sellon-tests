@@ -152,40 +152,79 @@ async function navigateToShipmentTab(): Promise<boolean> {
   return false;
 }
 
-// Confirm all positions in the Order items tab, saving after each confirmation.
+// Confirm all positions in the Order items tab, then save before leaving.
 async function confirmAllPositions(): Promise<void> {
   const opened = await saveAndClickTab('Order items');
   if (!opened) await clickTab('Items');
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(2000);
 
   const rows = page.locator('tbody tr');
   const count = await rows.count();
+  let confirmed = 0;
   for (let i = 0; i < count; i++) {
     try {
-      const confirmBtn = rows.nth(i).getByRole('button', { name: /confirm/i });
-      if (await confirmBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
-        await confirmBtn.click();
-        await page.waitForTimeout(1000);
-        // Fill quantity input if it appears after clicking confirm
-        const qtyInput = rows.nth(i).locator('input[type="number"]');
-        if (await qtyInput.isVisible({ timeout: 1500 }).catch(() => false)) {
-          const val = await qtyInput.inputValue();
-          if (!val || val === '0') await qtyInput.fill('1');
-        }
-        await saveOrder();
+      // Confirm button may be named "Confirm", "Accept", "Approve" — check all
+      const confirmBtn = rows.nth(i).locator(
+        'button:has-text("Confirm"), button:has-text("Accept"), button:has-text("Approve")'
+      ).filter({ visible: true }).first();
+      if (await confirmBtn.count() === 0) continue;
+      if (!await confirmBtn.isVisible({ timeout: 1500 }).catch(() => false)) continue;
+
+      await confirmBtn.click();
+      await page.waitForTimeout(1000);
+
+      // Fill quantity input if it appears after clicking confirm
+      const qtyInput = rows.nth(i).locator('input[type="number"]').filter({ visible: true }).first();
+      if (await qtyInput.count() > 0 && await qtyInput.isVisible({ timeout: 1500 }).catch(() => false)) {
+        const val = await qtyInput.inputValue();
+        if (!val || val === '0') await qtyInput.fill('1');
       }
+      confirmed++;
     } catch {}
   }
-  console.log(`  confirmAllPositions: processed ${count} row(s)`);
+  // Save once after all positions are confirmed so the Shipping tab sees them
+  await saveOrder();
+  console.log(`  confirmAllPositions: confirmed ${confirmed}/${count} row(s), saved`);
+}
+
+// Open a Lobster lb-combobox dropdown by index and select an option.
+// nth=0 → Carrier, nth=1 → Parcel type (order they appear in the Create shipment dialog).
+async function selectShipmentDropdown(nth: number, preferText?: string): Promise<void> {
+  // Lobster lb-combobox: click the arrow button to open the dropdown panel
+  const combos = page.locator('lb-combobox').filter({ visible: true });
+  if (await combos.count() > nth) {
+    const combo = combos.nth(nth);
+    const arrowBtn = combo.locator('button').first();
+    await arrowBtn.click();
+    await page.waitForTimeout(1500);
+    // Options appear as lb-option or .dropdown-item elements
+    const options = page.locator('lb-option, .dropdown-item, [class*="item-label"]').filter({ visible: true });
+    if (preferText) {
+      const match = options.filter({ hasText: new RegExp(preferText, 'i') }).first();
+      if (await match.count() > 0) { await match.click(); await page.waitForTimeout(500); return; }
+    }
+    const first = options.first();
+    if (await first.count() > 0) { await first.click(); await page.waitForTimeout(500); }
+    return;
+  }
+  // Fallback: native <select>
+  const selects = page.locator('select').filter({ visible: true });
+  if (await selects.count() > nth) {
+    const sel = selects.nth(nth);
+    if (preferText) {
+      try { await sel.selectOption({ label: preferText }); return; } catch {}
+    }
+    const opts = await sel.locator('option').allTextContents();
+    const valid = opts.find(o => o.trim() && !o.includes('--') && !o.includes('select'));
+    if (valid) await sel.selectOption({ label: valid.trim() });
+  }
 }
 
 // Create a single shipment inside the Shipment tab.
 // opts.selectAll → check ALL unchecked position rows (default: first row only for partial)
 // opts.futureDate → fill delivery date = next month (for back-ordered items)
-// opts.parcelType → e.g. 'Letter' (no tracking number needed)
-// opts.shipNum → tracking/shipment number to fill
+// opts.parcelType → preferred parcel type text (e.g. 'Letter')
 async function createShipment(opts: {
-  shipNum?: string;
   selectAll?: boolean;
   futureDate?: boolean;
   parcelType?: string;
@@ -194,19 +233,29 @@ async function createShipment(opts: {
   if (!clicked) { console.log('  createShipment: "New Shipment" button not found'); return false; }
   await page.waitForTimeout(2000);
 
-  // Select position checkboxes
+  const ts = Date.now().toString().slice(-8);
+
+  // Carrier — first lb-combobox (click arrow, select first/DHL option)
   try {
-    const checkboxes = page.locator('tbody tr input[type="checkbox"]').filter({ visible: true });
-    const total = await checkboxes.count();
-    // partial = only first checkbox; selectAll = all unchecked rows
-    const limit = opts.selectAll ? total : 1;
-    for (let i = 0; i < limit; i++) {
-      if (!await checkboxes.nth(i).isChecked().catch(() => false)) {
-        await checkboxes.nth(i).check();
-      }
-    }
-    console.log(`  createShipment: selected ${limit}/${total} position(s)`);
-  } catch (e) { console.log('  createShipment: checkbox selection failed:', e); }
+    await selectShipmentDropdown(0, 'DHL');
+    console.log('  createShipment: Carrier selected');
+  } catch (e) { console.log('  createShipment: Carrier failed:', e); }
+
+  // Parcel type — second lb-combobox (click arrow, select preferred or first option)
+  try {
+    await selectShipmentDropdown(1, opts.parcelType);
+    console.log('  createShipment: Parcel type selected');
+  } catch (e) { console.log('  createShipment: Parcel type failed:', e); }
+
+  // Shipment number and Delivery note number — both required text fields
+  try {
+    const textInputs = page.locator('input[type="text"], input:not([type]):not([type="checkbox"]):not([type="number"])')
+      .filter({ visible: true });
+    const inputCount = await textInputs.count();
+    if (inputCount > 0) { await textInputs.nth(0).fill(`SHP${ts}`); }
+    if (inputCount > 1) { await textInputs.nth(1).fill(`DNT${ts}`); }
+    console.log(`  createShipment: shipNum=SHP${ts}, noteNum=DNT${ts}`);
+  } catch (e) { console.log('  createShipment: text fields failed:', e); }
 
   // Future delivery date — Swiss format DD.MM.YYYY
   if (opts.futureDate) {
@@ -217,71 +266,41 @@ async function createShipment(opts: {
       const mm   = String(future.getMonth() + 1).padStart(2, '0');
       const yyyy = future.getFullYear();
       const dateStr = `${dd}.${mm}.${yyyy}`;
-
-      const byLabel = page.getByLabel(/delivery date|expected date|date/i, { exact: false }).first();
-      const target = (await byLabel.count() > 0 && await byLabel.isVisible({ timeout: 2000 }))
-        ? byLabel
-        : page.locator('input[type="date"], input[name*="date"], input[placeholder*="date"]')
-            .filter({ visible: true }).first();
-      if (await target.isVisible({ timeout: 2000 })) {
-        await target.fill(dateStr);
+      const dateInput = page.locator('input[type="date"], input[placeholder*="date" i], input[name*="date" i]')
+        .filter({ visible: true }).first();
+      if (await dateInput.count() > 0) {
+        await dateInput.fill(dateStr);
         await page.keyboard.press('Tab');
-        console.log(`  createShipment: future delivery date → ${dateStr}`);
+        console.log(`  createShipment: future date → ${dateStr}`);
       }
     } catch (e) { console.log('  createShipment: date fill failed:', e); }
   }
 
-  // Parcel type (e.g. Letter)
-  if (opts.parcelType) {
-    try {
-      const byLabel = page.getByLabel(/parcel type|parcel/i, { exact: false }).first();
-      if (await byLabel.count() > 0 && await byLabel.isVisible({ timeout: 2000 })) {
-        await byLabel.click();
-        await page.waitForTimeout(500);
-        const opt = page.locator('mat-option, [role="option"]')
-          .filter({ hasText: new RegExp(opts.parcelType, 'i') }).first();
-        if (await opt.count() > 0) { await opt.click(); await page.waitForTimeout(500); }
-      } else {
-        const sel = page.locator('select[name*="parcel"], select[name*="type"]').first();
-        if (await sel.isVisible({ timeout: 2000 })) await sel.selectOption({ label: opts.parcelType });
+  // Select position checkboxes
+  try {
+    const checkboxes = page.locator('tbody tr input[type="checkbox"]').filter({ visible: true });
+    const total = await checkboxes.count();
+    const limit = opts.selectAll ? total : Math.min(1, total);
+    for (let i = 0; i < limit; i++) {
+      if (!await checkboxes.nth(i).isChecked().catch(() => false)) {
+        await checkboxes.nth(i).check();
+        await page.waitForTimeout(300);
       }
-      console.log(`  createShipment: parcel type → ${opts.parcelType}`);
-    } catch (e) { console.log('  createShipment: parcel type failed:', e); }
-  }
+    }
+    console.log(`  createShipment: selected ${limit}/${total} position(s)`);
+  } catch (e) { console.log('  createShipment: checkbox selection failed:', e); }
 
-  // Carrier (always DHL; skip for Letter since no carrier needed)
-  if (opts.parcelType?.toLowerCase() !== 'letter') {
+  // Click "Add shipment" to confirm the dialog, then save the order
+  const added = await clickButton(/add shipment/i, 'add shipment');
+  if (!added) {
+    // Fallback: look for any confirm/submit button in the dialog
     try {
-      const byLabel = page.getByLabel(/carrier/i, { exact: false }).first();
-      if (await byLabel.count() > 0 && await byLabel.isVisible({ timeout: 2000 })) {
-        await byLabel.fill('DHL');
-      } else {
-        const input = page.locator('input[name*="carrier"], input[placeholder*="carrier"]')
-          .filter({ visible: true }).first();
-        if (await input.isVisible({ timeout: 2000 })) await input.fill('DHL');
-      }
-      await page.waitForTimeout(800);
-      // Accept autocomplete suggestion if one appeared
-      const opt = page.locator('mat-option, [role="option"]').filter({ visible: true }).first();
-      if (await opt.count() > 0) { await opt.click(); await page.waitForTimeout(400); }
+      const submitBtn = page.locator('button').filter({ hasText: /add|confirm|submit|ok/i })
+        .filter({ visible: true }).last();
+      if (await submitBtn.count() > 0) await submitBtn.click();
     } catch {}
   }
-
-  // Shipment/tracking number (not required for Letter)
-  if (opts.shipNum && opts.parcelType?.toLowerCase() !== 'letter') {
-    try {
-      const byLabel = page.getByLabel(/shipment number|tracking/i, { exact: false }).first();
-      if (await byLabel.count() > 0 && await byLabel.isVisible({ timeout: 2000 })) {
-        await byLabel.fill(opts.shipNum);
-      } else {
-        const input = page.locator('input[name*="shipment"], input[name*="tracking"], input[name*="number"]')
-          .filter({ visible: true }).first();
-        if (await input.isVisible({ timeout: 2000 })) await input.fill(opts.shipNum);
-      }
-      console.log(`  createShipment: shipment number → ${opts.shipNum}`);
-    } catch {}
-  }
-
+  await page.waitForTimeout(2000);
   await saveOrder();
   return true;
 }
@@ -529,20 +548,19 @@ for (let slot = 0; slot < MAX_ORDERS; slot++) {
 
       if (positions.length <= 1) {
         // Single shipment — ship all available positions now
-        await createShipment({ shipNum: `SHIP-${orders[slot]}-1`, selectAll: true });
+        await createShipment({ selectAll: true });
         console.log(`[Order ${n}] Single shipment created`);
       } else {
         // Split shipment: first partial (available stock, ship today)
-        await createShipment({ shipNum: `SHIP-${orders[slot]}-1`, selectAll: false });
+        await createShipment({ selectAll: false });
         console.log(`[Order ${n}] First partial shipment created`);
 
         // Second shipment: remaining back-ordered items, future date, Letter (no tracking)
         await navigateToShipmentTab();
         await createShipment({
-          shipNum:     `SHIP-${orders[slot]}-2`,
-          selectAll:   true,
-          futureDate:  true,
-          parcelType:  'Letter',
+          selectAll:  true,
+          futureDate: true,
+          parcelType: 'Letter',
         });
         console.log(`[Order ${n}] Second back-order shipment created with future date`);
       }
