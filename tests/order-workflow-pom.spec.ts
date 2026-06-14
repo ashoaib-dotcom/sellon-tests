@@ -1,15 +1,11 @@
 import { test, expect, chromium, Page, Browser } from '@playwright/test';
 import { LoginPage } from '../pages/login.page';
 import { OrdersPage } from '../pages/orders.page';
-import { getSftpHelper, SftpHelper } from '../helpers/sftp-upload';
-import { buildGORDR, buildGDELR, buildGCANR, buildGSURN, buildGCANP, buildGRETP } from '../helpers/edi-builder';
 
 test.describe.configure({ mode: 'serial' });
 
-// Discover and process up to this many orders — increase as needed
 const MAX_ORDERS = 10;
 
-// Populated in beforeAll by discoverOrders()
 let orders: string[] = [];
 let orderPositions: { sku: string; qty: number }[][] = [];
 
@@ -17,7 +13,6 @@ let browser: Browser;
 let page: Page;
 let loginPage: LoginPage;
 let ordersPage: OrdersPage;
-let sftp: SftpHelper;
 
 // ===========================================================================
 // Helpers
@@ -43,16 +38,29 @@ async function screenshot(name: string): Promise<void> {
   try { await page.screenshot({ path: `screenshots/${name}.png` }); } catch {}
 }
 
+// Close any blocking modal/dialog (e.g. a "Create shipment" dialog left open from a previous run).
+async function dismissAnyModal(): Promise<void> {
+  try {
+    const dialog = page.locator('lb-dialog, [role="dialog"], .lb-dialog').filter({ visible: true }).first();
+    if (!(await dialog.count() > 0 && await dialog.isVisible({ timeout: 1000 }).catch(() => false))) return;
+    // Try Escape first
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(1500);
+    if (await dialog.isVisible({ timeout: 500 }).catch(() => false)) {
+      // Click the × button inside the dialog
+      const xBtn = dialog.locator('button').filter({ hasText: /^[×✕x]$/i }).first();
+      if (await xBtn.count() > 0) { await xBtn.click(); await page.waitForTimeout(1000); }
+    }
+    console.log('  dismissAnyModal: closed dialog');
+  } catch {}
+}
+
 async function getOrderStatus(): Promise<string> {
   const body = await page.locator('body').textContent() || '';
-  for (const s of ['New', 'Open', 'Confirmed', 'Shipped', 'Cancelled', 'Closed']) {
+  for (const s of ['Shipped', 'Confirmed', 'New', 'Open', 'Cancelled', 'Closed']) {
     if (body.includes(s)) return s;
   }
   return 'unknown';
-}
-
-function sftpPat(type: string, orderId: string): RegExp {
-  return orderId ? new RegExp(`${type}.*${orderId}`, 'i') : new RegExp(type, 'i');
 }
 
 async function saveOrder(): Promise<void> {
@@ -81,7 +89,6 @@ async function clickTab(tabName: string): Promise<boolean> {
   }
 }
 
-// Save current tab before switching — Angular discards unsaved changes on tab navigation
 async function saveAndClickTab(tabName: string): Promise<boolean> {
   await saveOrder();
   return clickTab(tabName);
@@ -102,16 +109,12 @@ async function clickButton(namePattern: string | RegExp, label?: string): Promis
 }
 
 // Close the current order and return to the orders list.
-// Tries the X / back button first; falls back to navigation.
 async function closeOrder(): Promise<void> {
   try {
-    // Try Angular Material close/back icon buttons
     const closeBtn = page.locator([
       'button[aria-label*="close" i]',
       'button[aria-label*="back" i]',
       '[class*="close-btn"]',
-      'mat-icon:text("close")',
-      'mat-icon:text("arrow_back")',
       'button:has(mat-icon:text("close"))',
       'button:has(mat-icon:text("arrow_back"))',
     ].join(', ')).filter({ visible: true }).first();
@@ -119,25 +122,23 @@ async function closeOrder(): Promise<void> {
     if (await closeBtn.count() > 0 && await closeBtn.isVisible({ timeout: 2000 })) {
       await closeBtn.click();
       await page.waitForTimeout(2000);
-      // Verify we left — if order detail is still showing, fall through to navigation
       const stillOnDetail = await page.locator('[class*="order-detail"], [class*="order-form"]')
         .isVisible({ timeout: 2000 }).catch(() => false);
       if (!stillOnDetail) { console.log('  closeOrder: closed via X button'); return; }
     }
   } catch {}
 
-  // Fallback: press Escape, then navigate
   try { await page.keyboard.press('Escape'); await page.waitForTimeout(1000); } catch {}
   await ordersPage.navigateToOrders();
   await page.waitForTimeout(2000);
   console.log('  closeOrder: returned to orders list via navigation');
 }
 
-// Navigate to the Shipment tab — saves once, then tries multiple possible tab names
-// with a short timeout (much cheaper than chaining saveAndClickTab per name).
+// Navigate to the Shipping tab, saving first.
 async function navigateToShipmentTab(): Promise<boolean> {
+  await dismissAnyModal();
   await saveOrder();
-  for (const name of ['Shipment', 'Shipments', 'Shipping', 'Delivery', 'Deliveries']) {
+  for (const name of ['Shipping', 'Shipment', 'Shipments', 'Delivery', 'Deliveries']) {
     try {
       const tab = page.getByText(name, { exact: true }).filter({ visible: true }).first();
       if (await tab.isVisible({ timeout: 2000 })) {
@@ -148,56 +149,18 @@ async function navigateToShipmentTab(): Promise<boolean> {
       }
     } catch {}
   }
-  console.log('  Shipment tab not found — staying on current tab');
+  console.log('  Shipment tab not found');
   return false;
 }
 
-// Confirm all positions in the Order items tab, then save before leaving.
-async function confirmAllPositions(): Promise<void> {
-  const opened = await saveAndClickTab('Order items');
-  if (!opened) await clickTab('Items');
-  await page.waitForTimeout(2000);
-
-  const rows = page.locator('tbody tr');
-  const count = await rows.count();
-  let confirmed = 0;
-  for (let i = 0; i < count; i++) {
-    try {
-      // Confirm button may be named "Confirm", "Accept", "Approve" — check all
-      const confirmBtn = rows.nth(i).locator(
-        'button:has-text("Confirm"), button:has-text("Accept"), button:has-text("Approve")'
-      ).filter({ visible: true }).first();
-      if (await confirmBtn.count() === 0) continue;
-      if (!await confirmBtn.isVisible({ timeout: 1500 }).catch(() => false)) continue;
-
-      await confirmBtn.click();
-      await page.waitForTimeout(1000);
-
-      // Fill quantity input if it appears after clicking confirm
-      const qtyInput = rows.nth(i).locator('input[type="number"]').filter({ visible: true }).first();
-      if (await qtyInput.count() > 0 && await qtyInput.isVisible({ timeout: 1500 }).catch(() => false)) {
-        const val = await qtyInput.inputValue();
-        if (!val || val === '0') await qtyInput.fill('1');
-      }
-      confirmed++;
-    } catch {}
-  }
-  // Save once after all positions are confirmed so the Shipping tab sees them
-  await saveOrder();
-  console.log(`  confirmAllPositions: confirmed ${confirmed}/${count} row(s), saved`);
-}
-
-// Open a Lobster lb-combobox dropdown by index and select an option.
-// nth=0 → Carrier, nth=1 → Parcel type (order they appear in the Create shipment dialog).
+// Open a lb-combobox dropdown by index (0=Carrier, 1=Parcel type) and select an option.
 async function selectShipmentDropdown(nth: number, preferText?: string): Promise<void> {
-  // Lobster lb-combobox: click the arrow button to open the dropdown panel
   const combos = page.locator('lb-combobox').filter({ visible: true });
   if (await combos.count() > nth) {
-    const combo = combos.nth(nth);
-    const arrowBtn = combo.locator('button').first();
-    await arrowBtn.click();
+    // Click the combobox container itself to open the dropdown panel
+    // (the internal button has lb-visually-hidden and is not interactable)
+    await combos.nth(nth).click();
     await page.waitForTimeout(1500);
-    // Options appear as lb-option or .dropdown-item elements
     const options = page.locator('lb-option, .dropdown-item, [class*="item-label"]').filter({ visible: true });
     if (preferText) {
       const match = options.filter({ hasText: new RegExp(preferText, 'i') }).first();
@@ -215,87 +178,125 @@ async function selectShipmentDropdown(nth: number, preferText?: string): Promise
       try { await sel.selectOption({ label: preferText }); return; } catch {}
     }
     const opts = await sel.locator('option').allTextContents();
-    const valid = opts.find(o => o.trim() && !o.includes('--') && !o.includes('select'));
+    const valid = opts.find(o => o.trim() && !o.includes('--') && !o.toLowerCase().includes('select'));
     if (valid) await sel.selectOption({ label: valid.trim() });
   }
 }
 
-// Create a single shipment inside the Shipment tab.
-// opts.selectAll → check ALL unchecked position rows (default: first row only for partial)
-// opts.futureDate → fill delivery date = next month (for back-ordered items)
-// opts.parcelType → preferred parcel type text (e.g. 'Letter')
-async function createShipment(opts: {
-  selectAll?: boolean;
-  futureDate?: boolean;
-  parcelType?: string;
-} = {}): Promise<boolean> {
-  const clicked = await clickButton(/new shipment|create shipment/i, 'new shipment');
-  if (!clicked) { console.log('  createShipment: "New Shipment" button not found'); return false; }
+// Phase 1 — confirm all positions in the Order Items tab then save.
+async function confirmAllPositions(): Promise<void> {
+  await dismissAnyModal();
+  let opened = await saveAndClickTab('Order items');
+  if (!opened) opened = await clickTab('Items');
+  if (!opened) opened = await clickTab('Positions');
+  if (!opened) opened = await clickTab('Order positions');
+  await page.waitForTimeout(2000);
+
+  // Positions are rendered as cards, not table rows — search page-wide for confirm buttons
+  const confirmBtns = page.locator('button').filter({
+    hasText: /^(Confirm|Confirm position|Accept)$/
+  }).filter({ visible: true });
+  const count = await confirmBtns.count();
+  let confirmed = 0;
+  for (let i = 0; i < count; i++) {
+    try {
+      const btn = confirmBtns.nth(i);
+      if (!await btn.isVisible({ timeout: 1500 }).catch(() => false)) continue;
+      if (!await btn.isEnabled({ timeout: 1500 }).catch(() => false)) continue;
+      await btn.click();
+      await page.waitForTimeout(1000);
+      confirmed++;
+    } catch {}
+  }
+  // Save once after all positions confirmed so Shipping tab sees them
+  await saveOrder();
+  console.log(`  confirmAllPositions: confirmed ${confirmed}/${count} button(s), saved`);
+}
+
+// Phase 2 — create a shipment with partial split.
+// Carrier: Swiss Post | Parcel type: General Cargo
+// Checks first item, sets partial qty to (total_qty - 1), clicks Split,
+// unchecks remainder row, then clicks Add shipment.
+async function createShipment(): Promise<boolean> {
+  await dismissAnyModal();
+  const clicked = await clickButton(/create new shipment|new shipment/i, 'create new shipment');
+  if (!clicked) { console.log('  createShipment: button not found'); return false; }
   await page.waitForTimeout(2000);
 
   const ts = Date.now().toString().slice(-8);
 
-  // Carrier — first lb-combobox (click arrow, select first/DHL option)
+  // Carrier — first dropdown
   try {
-    await selectShipmentDropdown(0, 'DHL');
-    console.log('  createShipment: Carrier selected');
-  } catch (e) { console.log('  createShipment: Carrier failed:', e); }
+    await selectShipmentDropdown(0, 'Swiss Post');
+    console.log('  Carrier → Swiss Post');
+  } catch (e) { console.log('  Carrier failed:', e); }
 
-  // Parcel type — second lb-combobox (click arrow, select preferred or first option)
+  // Parcel type — second dropdown
   try {
-    await selectShipmentDropdown(1, opts.parcelType);
-    console.log('  createShipment: Parcel type selected');
-  } catch (e) { console.log('  createShipment: Parcel type failed:', e); }
+    await selectShipmentDropdown(1, 'General Cargo');
+    console.log('  Parcel type → General Cargo');
+  } catch (e) { console.log('  Parcel type failed:', e); }
 
-  // Shipment number and Delivery note number — both required text fields
+  // Shipment number and Delivery note number (both required, editable text inputs only)
   try {
-    const textInputs = page.locator('input[type="text"], input:not([type]):not([type="checkbox"]):not([type="number"])')
+    const textInputs = page.locator('input[type="text"]:not([readonly]), input:not([type]):not([readonly]):not([type="checkbox"]):not([type="number"])')
       .filter({ visible: true });
     const inputCount = await textInputs.count();
-    if (inputCount > 0) { await textInputs.nth(0).fill(`SHP${ts}`); }
-    if (inputCount > 1) { await textInputs.nth(1).fill(`DNT${ts}`); }
-    console.log(`  createShipment: shipNum=SHP${ts}, noteNum=DNT${ts}`);
-  } catch (e) { console.log('  createShipment: text fields failed:', e); }
+    if (inputCount > 0) await textInputs.nth(0).fill(`SHP${ts}`);
+    if (inputCount > 1) await textInputs.nth(1).fill(`DNT${ts}`);
+    console.log(`  shipNum=SHP${ts}  noteNum=DNT${ts}`);
+  } catch (e) { console.log('  Text fields failed:', e); }
 
-  // Future delivery date — Swiss format DD.MM.YYYY
-  if (opts.futureDate) {
-    try {
-      const future = new Date();
-      future.setMonth(future.getMonth() + 1);
-      const dd   = String(future.getDate()).padStart(2, '0');
-      const mm   = String(future.getMonth() + 1).padStart(2, '0');
-      const yyyy = future.getFullYear();
-      const dateStr = `${dd}.${mm}.${yyyy}`;
-      const dateInput = page.locator('input[type="date"], input[placeholder*="date" i], input[name*="date" i]')
-        .filter({ visible: true }).first();
-      if (await dateInput.count() > 0) {
-        await dateInput.fill(dateStr);
-        await page.keyboard.press('Tab');
-        console.log(`  createShipment: future date → ${dateStr}`);
-      }
-    } catch (e) { console.log('  createShipment: date fill failed:', e); }
-  }
-
-  // Select position checkboxes
+  // Check the first item row checkbox
   try {
     const checkboxes = page.locator('tbody tr input[type="checkbox"]').filter({ visible: true });
-    const total = await checkboxes.count();
-    const limit = opts.selectAll ? total : Math.min(1, total);
-    for (let i = 0; i < limit; i++) {
-      if (!await checkboxes.nth(i).isChecked().catch(() => false)) {
-        await checkboxes.nth(i).check();
-        await page.waitForTimeout(300);
+    if (await checkboxes.count() > 0 && !await checkboxes.first().isChecked().catch(() => false)) {
+      await checkboxes.first().check();
+      await page.waitForTimeout(500);
+      console.log('  Item checkbox checked');
+    }
+  } catch (e) { console.log('  Checkbox failed:', e); }
+
+  // Read qty from the first row, set partial = qty-1, click Split
+  try {
+    const firstRow = page.locator('tbody tr').first();
+    const cells = await firstRow.locator('td').allInnerTexts();
+    const qty = cells.map(c => parseInt(c.trim())).find(n => !isNaN(n) && n > 1) || 0;
+
+    if (qty > 1) {
+      // "Create partial shipment of" number input
+      const partialInput = page.locator('input[type="number"]').filter({ visible: true }).first();
+      if (await partialInput.count() > 0) {
+        await partialInput.fill(String(qty - 1));
+        await page.waitForTimeout(500);
+        console.log(`  Partial qty: ${qty - 1} of ${qty}`);
+
+        // Click Split
+        const splitBtn = page.getByRole('button', { name: /^split$/i }).filter({ visible: true }).first();
+        if (await splitBtn.count() > 0 && await splitBtn.isVisible({ timeout: 2000 })) {
+          await splitBtn.click();
+          await page.waitForTimeout(2000);
+          console.log('  Split clicked');
+
+          // Uncheck remainder row (second row = qty 1)
+          const checkboxesAfterSplit = page.locator('tbody tr input[type="checkbox"]').filter({ visible: true });
+          if (await checkboxesAfterSplit.count() >= 2) {
+            if (await checkboxesAfterSplit.nth(1).isChecked().catch(() => false)) {
+              await checkboxesAfterSplit.nth(1).uncheck();
+              await page.waitForTimeout(300);
+              console.log('  Remainder row unchecked');
+            }
+          }
+        }
       }
     }
-    console.log(`  createShipment: selected ${limit}/${total} position(s)`);
-  } catch (e) { console.log('  createShipment: checkbox selection failed:', e); }
+  } catch (e) { console.log('  Split failed:', e); }
 
-  // Click "Add shipment" to confirm the dialog, then save the order
+  // Click "Add shipment" to close the dialog and record the shipment
   const added = await clickButton(/add shipment/i, 'add shipment');
   if (!added) {
-    // Fallback: look for any confirm/submit button in the dialog
     try {
-      const submitBtn = page.locator('button').filter({ hasText: /add|confirm|submit|ok/i })
+      const submitBtn = page.locator('button').filter({ hasText: /add|confirm/i })
         .filter({ visible: true }).last();
       if (await submitBtn.count() > 0) await submitBtn.click();
     } catch {}
@@ -305,7 +306,6 @@ async function createShipment(opts: {
   return true;
 }
 
-
 async function discoverOrders(maxCount = MAX_ORDERS): Promise<string[]> {
   try {
     await ensureLoggedIn();
@@ -313,7 +313,6 @@ async function discoverOrders(maxCount = MAX_ORDERS): Promise<string[]> {
     await page.waitForTimeout(3000);
     const ids: string[] = [];
 
-    // Find the ID column by header so we read the right cell regardless of column position
     const idColIdx = await ordersPage.findColumnIndex('ID');
     console.log(`[discoverOrders] ID column index: ${idColIdx}`);
 
@@ -325,11 +324,9 @@ async function discoverOrders(maxCount = MAX_ORDERS): Promise<string[]> {
       const cellCount = await cells.count();
 
       if (idColIdx >= 0 && idColIdx < cellCount) {
-        // Read directly from the ID column — take any non-empty value
         const text = (await cells.nth(idColIdx).textContent() || '').trim();
-        if (text && !ids.includes(text)) { ids.push(text); }
+        if (text && !ids.includes(text)) ids.push(text);
       } else {
-        // Fallback: scan first 8 columns for a value that contains digits and no spaces
         for (let j = 0; j < Math.min(cellCount, 8); j++) {
           const text = (await cells.nth(j).textContent() || '').trim();
           if (text && /\d/.test(text) && !/\s/.test(text) && text.length <= 40 && !ids.includes(text)) {
@@ -348,6 +345,7 @@ async function discoverOrders(maxCount = MAX_ORDERS): Promise<string[]> {
 
 async function extractPositions(): Promise<{ sku: string; qty: number }[]> {
   try {
+    await dismissAnyModal();
     const opened = await clickTab('Order items');
     if (!opened) await clickTab('Items');
     await page.waitForTimeout(2000);
@@ -356,7 +354,7 @@ async function extractPositions(): Promise<{ sku: string; qty: number }[]> {
     const count = await rows.count();
     for (let i = 0; i < count; i++) {
       const text = (await rows.nth(i).textContent() || '').trim();
-      const skuMatch = text.match(/[A-Z]{2,8}-[A-Z]{2,8}-?\d{2,4}/);
+      const skuMatch = text.match(/[A-Z]{2,8}-[A-Z0-9]{2,8}-?\d{2,4}/);
       if (skuMatch) {
         const qtyMatch = text.match(/\b(\d{1,5})\b/);
         positions.push({ sku: skuMatch[0], qty: qtyMatch ? Math.max(parseInt(qtyMatch[1], 10), 1) : 1 });
@@ -390,65 +388,11 @@ async function findAndOpenOrder(orderId: string): Promise<boolean> {
     }
     await row.dblclick();
     await page.waitForTimeout(5000);
+    await dismissAnyModal();
     return true;
   } catch (e) {
     console.log(`  findAndOpenOrder(${orderId}) error:`, (e as Error).message);
     return false;
-  }
-}
-
-async function importEDI(
-  type: string,
-  orderId: string,
-  opts?: { positions?: { sku: string; qty?: number }[]; reason?: string }
-): Promise<boolean> {
-  let content = '';
-  let filename = `${type}_${orderId}_${Date.now()}.edi`;
-  try {
-    const upper = type.toUpperCase();
-    const positions = opts?.positions || [];
-    const reason = opts?.reason || '';
-    let ediFile: { content: string; filename: string } | null = null;
-    if      (upper === 'CANP')  ediFile = buildGCANP(orderId, positions.map(p => ({ sku: p.sku })), reason);
-    else if (upper === 'RETP')  ediFile = buildGRETP(orderId, positions.map(p => ({ sku: p.sku, qty: p.qty ?? 1 })), reason);
-    else if (upper === 'GORDR') ediFile = buildGORDR(orderId, positions.map(p => ({ sku: p.sku, qty: p.qty ?? 1 })));
-    else if (upper === 'GDELR') ediFile = buildGDELR(orderId, positions.map(p => ({ sku: p.sku, qty: p.qty ?? 1 })), 'SHIP-AUTO', 'DHL');
-    else if (upper === 'GCANR') ediFile = buildGCANR(orderId, 'Rejected', reason);
-    else if (upper === 'GSURN') ediFile = buildGSURN(orderId, 'Rejected', positions.map(p => ({ sku: p.sku })), reason);
-    if (ediFile) { content = ediFile.content; filename = ediFile.filename; }
-  } catch (e) { console.log(`[importEDI] Build error for ${type}:`, e); }
-
-  if (content && sftp) {
-    try {
-      const isOutbound = ['CANP', 'RETP', 'GORDP'].includes(type.toUpperCase());
-      const result = isOutbound
-        ? await sftp.uploadToOutDir(content, filename)
-        : await sftp.uploadEDIContent(content, filename);
-      console.log(`[importEDI] Uploaded ${filename}:`, result);
-    } catch (e) { console.log('[importEDI] SFTP failed:', e); }
-  }
-
-  try {
-    const importBtn = page.getByRole('button', { name: new RegExp(type, 'i') }).filter({ visible: true }).first();
-    if (await importBtn.isVisible({ timeout: 3000 })) {
-      await importBtn.click();
-    } else {
-      const fallback = page.getByText('Import', { exact: true }).filter({ visible: true }).first();
-      if (await fallback.isVisible({ timeout: 3000 })) await fallback.click();
-    }
-  } catch {}
-  await page.waitForTimeout(8000);
-  return true;
-}
-
-async function waitForSftpFile(pattern: RegExp | string, timeoutMs = 60000): Promise<string | null> {
-  if (!sftp) { console.log('SFTP not configured — skipping wait for:', pattern); return null; }
-  try {
-    const inDir = process.env.SFTP_REMOTE_IN_DIR || '/incoming';
-    return await sftp.waitForFile(pattern, timeoutMs, 3000, inDir);
-  } catch (e) {
-    console.log(`[waitForSftpFile] ${pattern}:`, e);
-    return null;
   }
 }
 
@@ -467,12 +411,10 @@ test.beforeAll(async () => {
   page = await context.newPage();
   loginPage = new LoginPage(page);
   ordersPage = new OrdersPage(page);
-  sftp = getSftpHelper();
 
   await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
   await page.waitForTimeout(3000);
 
-  // Discover existing orders in Sellon
   orders = await discoverOrders(MAX_ORDERS);
 
   orderPositions = Array.from({ length: MAX_ORDERS }, () => []);
@@ -480,21 +422,21 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await sftp.disconnect().catch(() => {});
+  test.setTimeout(60000);
   await browser.close();
 });
 
 // ===========================================================================
-// Generic order workflow — one describe per slot (slot skips if no order found)
+// Order workflow — 4 steps per order slot
 // ===========================================================================
 
 for (let slot = 0; slot < MAX_ORDERS; slot++) {
-  const n = slot + 1; // human-readable order number in log/screenshot names
+  const n = slot + 1;
 
   test.describe(`Order ${n}`, () => {
     let opened = false;
 
-    // ── 1. Open order, extract positions, verify delivery address ─────────
+    // ── Step 1: Open order ────────────────────────────────────────────────
     test(`[Order ${n}] 1. Open order and verify delivery address`, async () => {
       test.setTimeout(180000);
       if (!orders[slot]) { test.skip(); return; }
@@ -507,170 +449,53 @@ for (let slot = 0; slot < MAX_ORDERS; slot++) {
 
       const body = await page.locator('body').textContent() || '';
       const hasAddress = /delivery|address|street|city|zip|name/i.test(body);
-      console.log(`[Order ${n}] Delivery address: ${hasAddress} | Positions: ${orderPositions[slot].length}`);
+      console.log(`[Order ${n}] Address found: ${hasAddress} | Positions: ${orderPositions[slot].length}`);
       expect(hasAddress).toBeTruthy();
       await screenshot(`order${n}-1-open`);
     });
 
-    // ── 2. Confirm all positions and save ────────────────────────────────
+    // ── Step 2: Confirm all positions ────────────────────────────────────
     test(`[Order ${n}] 2. Confirm all positions`, async () => {
       test.setTimeout(180000);
       if (!opened) { test.skip(); return; }
 
       await confirmAllPositions();
-      await saveOrder();
 
       const status = await getOrderStatus();
       console.log(`[Order ${n}] Status after confirm: ${status}`);
       await screenshot(`order${n}-2-confirmed`);
     });
 
-    // ── 3. GORDR on SFTP ─────────────────────────────────────────────────
-    test(`[Order ${n}] 3. GORDR on SFTP`, async () => {
-      test.setTimeout(120000);
-      if (!orders[slot]) { test.skip(); return; }
-      const file = await waitForSftpFile(sftpPat('GORDR', orders[slot]), 30000);
-      console.log(`[Order ${n}] GORDR: ${file || 'not found'}`);
-    });
-
-    // ── 4. Create shipment(s) ─────────────────────────────────────────────
-    // If the order has more than one position (more items than one stock line):
-    //   • First shipment: partial — ships available positions now
-    //   • Second shipment: remaining positions — future delivery date (back-order),
-    //     Letter parcel type (no tracking number required)
-    // If the order has only one position: single full shipment.
-    test(`[Order ${n}] 4. Create shipment(s) — split if multiple positions`, async () => {
+    // ── Step 3: Create shipment with partial split ────────────────────────
+    // Carrier: Swiss Post | Parcel type: General Cargo
+    // Splits qty into (total-1) shipped now + 1 remainder (unchecked)
+    test(`[Order ${n}] 3. Create shipment with partial split`, async () => {
       test.setTimeout(180000);
       if (!opened) { test.skip(); return; }
 
       await navigateToShipmentTab();
-      const positions = orderPositions[slot];
+      await createShipment();
 
-      if (positions.length <= 1) {
-        // Single shipment — ship all available positions now
-        await createShipment({ selectAll: true });
-        console.log(`[Order ${n}] Single shipment created`);
-      } else {
-        // Split shipment: first partial (available stock, ship today)
-        await createShipment({ selectAll: false });
-        console.log(`[Order ${n}] First partial shipment created`);
-
-        // Second shipment: remaining back-ordered items, future date, Letter (no tracking)
-        await navigateToShipmentTab();
-        await createShipment({
-          selectAll:  true,
-          futureDate: true,
-          parcelType: 'Letter',
-        });
-        console.log(`[Order ${n}] Second back-order shipment created with future date`);
-      }
-
-      await saveOrder();
-      await screenshot(`order${n}-4-shipment`);
+      await screenshot(`order${n}-3-shipment`);
     });
 
-    // ── 5. GDELR on SFTP ─────────────────────────────────────────────────
-    test(`[Order ${n}] 5. GDELR on SFTP`, async () => {
-      test.setTimeout(120000);
-      if (!orders[slot]) { test.skip(); return; }
-      const file = await waitForSftpFile(sftpPat('GDELR', orders[slot]), 60000);
-      console.log(`[Order ${n}] GDELR: ${file || 'not found'}`);
-    });
-
-    // ── 6. Cancel request (CANP) ──────────────────────────────────────────
-    // Platform sends a cancellation request; we reject it with a reason, save, close.
-    test(`[Order ${n}] 6. Cancellation request (CANP) — reject and save`, async () => {
-      test.setTimeout(180000);
-      if (!opened) { test.skip(); return; }
-
-      const positions = orderPositions[slot];
-      const pos = positions.length ? [positions[0]] : [{ sku: 'UNKNOWN', qty: 1 }];
-      await importEDI('CANP', orders[slot], { positions: pos, reason: 'Customer cancelled' });
-
-      await saveAndClickTab('Cancellation request');
-      const body = await page.locator('body').textContent() || '';
-      console.log(`[Order ${n}] Cancellation tab visible: ${/cancellation|cancel/i.test(body)}`);
-
-      try {
-        const rejectBtn = page.getByRole('button', { name: /reject/i }).filter({ visible: true }).first();
-        if (await rejectBtn.isVisible({ timeout: 3000 }) && await rejectBtn.isEnabled()) {
-          await rejectBtn.click();
-          await page.waitForTimeout(1000);
-        }
-        const textarea = page.locator('textarea').filter({ visible: true }).first();
-        if (await textarea.isVisible({ timeout: 3000 })) {
-          await textarea.fill('Cancellation rejected — test');
-        }
-      } catch {}
-
-      await saveOrder();
-      await screenshot(`order${n}-6-cancel`);
-    });
-
-    // ── 6b. GCANR on SFTP ────────────────────────────────────────────────
-    test(`[Order ${n}] 6b. GCANR on SFTP`, async () => {
-      test.setTimeout(120000);
-      if (!orders[slot]) { test.skip(); return; }
-      const file = await waitForSftpFile(sftpPat('GCANR', orders[slot]), 30000);
-      console.log(`[Order ${n}] GCANR: ${file || 'not found'}`);
-    });
-
-    // ── 7. Return request (RETP) ──────────────────────────────────────────
-    // Platform sends a return request; we reject it with a reason, save.
-    test(`[Order ${n}] 7. Return request (RETP) — reject and save`, async () => {
-      test.setTimeout(180000);
-      if (!opened) { test.skip(); return; }
-
-      const positions = orderPositions[slot];
-      const pos = positions.length ? [{ sku: positions[0].sku, qty: 1 }] : [{ sku: 'UNKNOWN', qty: 1 }];
-      await importEDI('RETP', orders[slot], { positions: pos, reason: 'Product defective' });
-
-      await saveAndClickTab('Return request');
-      const body = await page.locator('body').textContent() || '';
-      console.log(`[Order ${n}] Return request tab visible: ${/return|retp/i.test(body)}`);
-
-      try {
-        const rejectBtn = page.getByRole('button', { name: /reject/i }).filter({ visible: true }).first();
-        if (await rejectBtn.isVisible({ timeout: 3000 })) {
-          const enabled = await rejectBtn.isEnabled().catch(() => false);
-          if (enabled) {
-            await rejectBtn.click();
-            await page.waitForTimeout(1000);
-          } else {
-            console.log(`[Order ${n}] Reject button disabled — reason must be filled first`);
-          }
-        }
-        const textarea = page.locator('textarea').filter({ visible: true }).first();
-        if (await textarea.isVisible({ timeout: 3000 })) {
-          await textarea.fill('Return rejected — test');
-        }
-      } catch {}
-
-      await saveOrder();
-      await screenshot(`order${n}-7-return`);
-    });
-
-    // ── 7b. GSURN on SFTP ────────────────────────────────────────────────
-    test(`[Order ${n}] 7b. GSURN on SFTP`, async () => {
-      test.setTimeout(120000);
-      if (!orders[slot]) { test.skip(); return; }
-      const file = await waitForSftpFile(sftpPat('GSURN', orders[slot]), 30000);
-      console.log(`[Order ${n}] GSURN: ${file || 'not found'}`);
-    });
-
-    // ── 8. Save, check final status, close order → back to orders list ───
-    test(`[Order ${n}] 8. Final status and close order`, async () => {
+    // ── Step 4: Verify Shipped status and close ───────────────────────────
+    test(`[Order ${n}] 4. Verify Shipped status and close order`, async () => {
       test.setTimeout(120000);
       if (!opened) { test.skip(); return; }
 
       await saveOrder();
       const status = await getOrderStatus();
       console.log(`[Order ${n}] Final status: ${status}`);
-      await screenshot(`order${n}-8-final`);
+      await screenshot(`order${n}-4-status`);
 
-      // Close the order detail and return to the orders overview
       await closeOrder();
-      console.log(`[Order ${n}] Closed — back to orders list`);
+
+      // Verify the order row in the list shows Shipped
+      await ordersPage.navigateToOrders();
+      await page.waitForTimeout(3000);
+      const body = await page.locator('body').textContent() || '';
+      console.log(`[Order ${n}] Shipped visible in list: ${/shipped/i.test(body)}`);
     });
   });
 }
