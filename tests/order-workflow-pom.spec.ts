@@ -293,14 +293,30 @@ async function discoverOrders(maxCount = MAX_ORDERS): Promise<string[]> {
     await ordersPage.navigateToOrders();
     await page.waitForTimeout(3000);
     const ids: string[] = [];
+
+    // Find the ID column by header so we read the right cell regardless of column position
+    const idColIdx = await ordersPage.findColumnIndex('ID');
+    console.log(`[discoverOrders] ID column index: ${idColIdx}`);
+
     const rows = page.locator('tbody tr');
     const rowCount = Math.min(await rows.count(), 50);
+
     for (let i = 0; i < rowCount && ids.length < maxCount; i++) {
       const cells = rows.nth(i).locator('td');
       const cellCount = await cells.count();
-      for (let j = 0; j < Math.min(cellCount, 6); j++) {
-        const text = (await cells.nth(j).textContent() || '').trim();
-        if (/^\d{6,12}$/.test(text) && !ids.includes(text)) { ids.push(text); break; }
+
+      if (idColIdx >= 0 && idColIdx < cellCount) {
+        // Read directly from the ID column — take any non-empty value
+        const text = (await cells.nth(idColIdx).textContent() || '').trim();
+        if (text && !ids.includes(text)) { ids.push(text); }
+      } else {
+        // Fallback: scan first 8 columns for a value that contains digits and no spaces
+        for (let j = 0; j < Math.min(cellCount, 8); j++) {
+          const text = (await cells.nth(j).textContent() || '').trim();
+          if (text && /\d/.test(text) && !/\s/.test(text) && text.length <= 40 && !ids.includes(text)) {
+            ids.push(text); break;
+          }
+        }
       }
     }
     console.log(`[discoverOrders] Found ${ids.length}: ${ids.join(', ') || 'none'}`);
