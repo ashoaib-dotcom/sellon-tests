@@ -41,18 +41,20 @@ async function dismissAnyModal() {
 
 async function saveOrder() {
   try {
-    const btn = page.getByText('Save', { exact: true }).filter({ visible: true }).first();
-    if (await btn.isVisible({ timeout: 3000 })) { await btn.click(); }
-    else {
-      const b2 = page.getByRole('button', { name: /save/i }).filter({ visible: true }).first();
-      if (await b2.isVisible({ timeout: 3000 })) await b2.click();
+    const btn = page.getByRole('button', { name: /^save$/i }).filter({ visible: true }).first();
+    const visible = await btn.isVisible({ timeout: 1500 }).catch(() => false);
+    if (visible && await btn.isEnabled({ timeout: 500 }).catch(() => false)) {
+      await btn.click();
+      await page.waitForTimeout(2000);
+      console.log('  saveOrder: saved');
     }
   } catch {}
-  await page.waitForTimeout(3500);
 }
 
 async function clickTab(name: string): Promise<boolean> {
   try {
+    // Always save before switching tabs so no unsaved changes are discarded
+    await saveOrder();
     const tab = page.getByText(name, { exact: true }).filter({ visible: true }).first();
     if (!await tab.isVisible({ timeout: 4000 })) { console.log(`  Tab "${name}" not visible`); return false; }
     await tab.click();
