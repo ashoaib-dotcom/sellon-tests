@@ -484,11 +484,21 @@ async function createShipmentDialog(
     } catch (e) { console.log('  split failed:', e); }
   }
 
-  const added = await clickButton(/add shipment/i, 'add shipment');
-  if (!added) {
-    const sub = page.locator('button').filter({ hasText: /add|confirm/i }).filter({ visible: true }).last();
-    if (await sub.count() > 0) await sub.click();
-  }
+  // Confirm the shipment — click the submit button inside the dialog only
+  const dialog = page.locator('lb-dialog,[role="dialog"]').filter({ visible: true }).first();
+  const dialogScope = (await dialog.count() > 0) ? dialog : page;
+  const added = await (async () => {
+    for (const pat of [/add shipment/i, /create shipment/i, /submit/i, /save/i, /confirm/i, /ok/i]) {
+      const btn = dialogScope.locator('button').filter({ hasText: pat }).filter({ visible: true }).last();
+      if (await btn.count() > 0 && await btn.isEnabled({ timeout: 500 }).catch(() => false)) {
+        await btn.click();
+        console.log(`  createShipment: clicked "${pat}"`);
+        return true;
+      }
+    }
+    return false;
+  })();
+  if (!added) console.log('  createShipment: no enabled submit button found in dialog');
   await page.waitForTimeout(2000);
   await saveOrder();
   return true;
