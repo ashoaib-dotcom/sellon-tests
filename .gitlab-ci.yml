@@ -15,7 +15,7 @@ default:
     - node --version
     - npm --version
     - npm ci
-    - npx playwright install chromium --with-deps
+    - npx playwright install chromium
 
 # Shared template for all test jobs
 .test-template:
