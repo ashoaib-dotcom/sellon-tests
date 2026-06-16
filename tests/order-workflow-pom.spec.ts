@@ -15,9 +15,10 @@ let page: Page;
 let loginPage: LoginPage;
 let ordersPage: OrdersPage;
 let sftp: SftpHelper;
-let orders: string[] = [];
+let orders: OrderInfo[] = [];
 
 interface Position { sku: string; qty: number; providerKey?: string }
+interface OrderInfo { id: string; status: string }
 
 // ── Generic helpers ──────────────────────────────────────────────────────────
 
@@ -41,12 +42,20 @@ async function dismissAnyModal() {
 
 async function saveOrder() {
   try {
-    const btn = page.getByRole('button', { name: /^save$/i }).filter({ visible: true }).first();
-    const visible = await btn.isVisible({ timeout: 1500 }).catch(() => false);
-    if (visible && await btn.isEnabled({ timeout: 500 }).catch(() => false)) {
-      await btn.click();
+    // Codegen confirmed: Save is the 2nd ribbon button (lb-ribbon-big-button:nth-child(2))
+    const ribbon = page.locator('lb-ribbon-big-button:nth-child(2) > .lb-ribbon-icon').filter({ visible: true }).first();
+    if (await ribbon.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await ribbon.click();
       await page.waitForTimeout(2000);
       console.log('  saveOrder: saved');
+      return;
+    }
+    // Fallback: named Save button
+    const btn = page.getByRole('button', { name: /^save$/i }).filter({ visible: true }).first();
+    if (await btn.isVisible({ timeout: 1000 }).catch(() => false) && await btn.isEnabled({ timeout: 500 }).catch(() => false)) {
+      await btn.click();
+      await page.waitForTimeout(2000);
+      console.log('  saveOrder: saved via button');
     }
   } catch {}
 }
@@ -85,7 +94,7 @@ async function getOrderStatus(): Promise<string> {
 
 async function ensureLoggedIn() {
   try { if (await page.locator('.menu-icon').isVisible({ timeout: 4000 })) return; } catch {}
-  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || '', process.env.TEST_PASSWORD || '');
 }
 
 async function findAndOpenOrder(orderId: string): Promise<boolean> {
@@ -111,6 +120,15 @@ async function findAndOpenOrder(orderId: string): Promise<boolean> {
 }
 
 async function closeOrder() {
+  // Codegen confirmed: close button has class .close-button
+  try {
+    const closeBtn = page.locator('.close-button').filter({ visible: true }).first();
+    if (await closeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await closeBtn.click();
+      await page.waitForTimeout(1000);
+      return;
+    }
+  } catch {}
   try { await page.keyboard.press('Escape'); await page.waitForTimeout(800); } catch {}
   await ordersPage.navigateToOrders();
   await page.waitForTimeout(2000);
@@ -371,12 +389,13 @@ async function confirmAllPositions(n: number): Promise<number> {
   await dismissAnyModal();
   await clickTab('Order items');
   await page.waitForTimeout(2000);
-  const btns = page.locator('button').filter({ hasText: /^(Confirm|Confirm position|Accept)$/ }).filter({ visible: true });
+  // Codegen confirmed exact button name: "Confirm position"
+  const btns = page.getByRole('button', { name: 'Confirm position' }).filter({ visible: true });
   const count = await btns.count();
   let confirmed = 0;
   for (let i = 0; i < count; i++) {
     try {
-      const btn = page.locator('button').filter({ hasText: /^(Confirm|Confirm position|Accept)$/ }).filter({ visible: true }).first();
+      const btn = page.getByRole('button', { name: 'Confirm position' }).filter({ visible: true }).first();
       if (!await btn.isVisible({ timeout: 1500 }).catch(() => false)) continue;
       if (!await btn.isEnabled({ timeout: 1500 }).catch(() => false)) continue;
       await btn.click(); await page.waitForTimeout(1000);
@@ -437,7 +456,8 @@ async function createShipmentDialog(
   opts: { carrier?: string; parcelType?: string; splitQty?: number; isLetter?: boolean } = {}
 ): Promise<boolean> {
   await dismissAnyModal();
-  const clicked = await clickButton(/create new shipment|new shipment/i, 'create new shipment');
+  // Codegen confirmed: button label is " Create new shipment" (with leading space)
+  const clicked = await clickButton(/create new shipment/i, 'create new shipment');
   if (!clicked) { console.log('  createShipment: button not found'); return false; }
   await page.waitForTimeout(2000);
 
@@ -486,15 +506,22 @@ async function createShipmentDialog(
     } catch (e) { console.log('  split failed:', e); }
   }
 
-  // Confirm the shipment — click the submit button inside the dialog only
+  // Codegen confirmed: submit button is exactly "Add shipment"
   const dialog = page.locator('lb-dialog,[role="dialog"]').filter({ visible: true }).first();
   const dialogScope = (await dialog.count() > 0) ? dialog : page;
+  const addBtn = dialogScope.getByRole('button', { name: 'Add shipment' }).filter({ visible: true }).first();
   const added = await (async () => {
-    for (const pat of [/add shipment/i, /create shipment/i, /submit/i, /save/i, /confirm/i, /ok/i]) {
+    if (await addBtn.count() > 0 && await addBtn.isEnabled({ timeout: 1000 }).catch(() => false)) {
+      await addBtn.click();
+      console.log('  createShipment: clicked "Add shipment"');
+      return true;
+    }
+    // Fallback for other button labels
+    for (const pat of [/create shipment/i, /submit/i, /confirm/i, /ok/i]) {
       const btn = dialogScope.locator('button').filter({ hasText: pat }).filter({ visible: true }).last();
       if (await btn.count() > 0 && await btn.isEnabled({ timeout: 500 }).catch(() => false)) {
         await btn.click();
-        console.log(`  createShipment: clicked "${pat}"`);
+        console.log(`  createShipment: clicked fallback "${pat}"`);
         return true;
       }
     }
@@ -529,29 +556,35 @@ async function registerUAR(positionIndex: number, qty: number, n: number): Promi
 
 // ── discover orders ──────────────────────────────────────────────────────────
 
-async function discoverOrders(max: number): Promise<string[]> {
+async function discoverOrders(max: number): Promise<OrderInfo[]> {
   await ensureLoggedIn();
   await ordersPage.navigateToOrders();
   await page.waitForTimeout(3000);
-  const ids: string[] = [];
+  const result: OrderInfo[] = [];
   const idColIdx = await ordersPage.findColumnIndex('ID');
+  const statusColIdx = await ordersPage.findColumnIndex('Status');
   const rows = page.locator('tbody tr');
   const rowCount = Math.min(await rows.count(), 50);
-  for (let i = 0; i < rowCount && ids.length < max; i++) {
+  for (let i = 0; i < rowCount && result.length < max; i++) {
     const cells = rows.nth(i).locator('td');
     const cellCount = await cells.count();
+    let id = '';
     if (idColIdx >= 0 && idColIdx < cellCount) {
-      const text = (await cells.nth(idColIdx).textContent() || '').trim();
-      if (text && !ids.includes(text)) ids.push(text);
+      id = (await cells.nth(idColIdx).textContent() || '').trim();
     } else {
       for (let j = 0; j < Math.min(cellCount, 6); j++) {
         const text = (await cells.nth(j).textContent() || '').trim();
-        if (text && /^\d+$/.test(text) && !ids.includes(text)) { ids.push(text); break; }
+        if (text && /^\d+$/.test(text)) { id = text; break; }
       }
     }
+    if (!id || result.some(o => o.id === id)) continue;
+    const status = (statusColIdx >= 0 && statusColIdx < cellCount)
+      ? (await cells.nth(statusColIdx).textContent() || '').trim()
+      : '';
+    result.push({ id, status });
   }
-  console.log(`[discoverOrders] Found ${ids.length}: ${ids.join(', ') || 'none'}`);
-  return ids;
+  console.log(`[discoverOrders] Found ${result.length}: ${result.map(o => `${o.id}(${o.status})`).join(', ') || 'none'}`);
+  return result;
 }
 
 // ============================================================================
@@ -578,7 +611,7 @@ test.beforeAll(async () => {
     await sftp.connect().catch(e => console.log('[SFTP] connect failed:', e.message));
   }
 
-  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || '', process.env.TEST_PASSWORD || '');
   await page.waitForTimeout(3000);
 
   orders = await discoverOrders(MAX_ORDERS);
@@ -617,20 +650,20 @@ for (let slot = 0; slot < MAX_ORDERS; slot++) {
       test.setTimeout(120000);
       if (!orders[slot]) { test.skip(); return; }
 
-      opened = await findAndOpenOrder(orders[slot]);
-      if (!opened) { test.skip(); return; }
+      // Status was read from the orders list — no need to parse it from the open order page
+      initialStatus = orders[slot].status;
+      console.log(`[Order ${n}] Pre-read status: "${initialStatus}" (id: ${orders[slot].id})`);
 
-      initialStatus = await getOrderStatus();
-      console.log(`[Order ${n}] Detected status: "${initialStatus}"`);
-      await ss(`order${n}-1-open`);
-
-      // Only process New or Open orders; anything else → close and mark as skip
+      // Only process New or Open orders; anything else → skip without even opening
       if (!['New', 'Open'].includes(initialStatus)) {
         console.log(`[Order ${n}] Status is "${initialStatus}" — skipping (only New/Open orders are processed)`);
-        await closeOrder();
-        opened = false;
         return;
       }
+
+      opened = await findAndOpenOrder(orders[slot].id);
+      if (!opened) { test.skip(); return; }
+
+      await ss(`order${n}-1-open`);
 
       positions = await readPositions();
       if (positions.length === 0) {
@@ -660,7 +693,7 @@ for (let slot = 0; slot < MAX_ORDERS; slot++) {
       test.setTimeout(180000);
       if (!opened) { test.skip(); return; }
 
-      const uploaded = await importEDI('GCANP', orders[slot], positions);
+      const uploaded = await importEDI('GCANP', orders[slot].id, positions);
       if (!uploaded) {
         console.log(`[Order ${n}] CANP step skipped — SFTP not configured`);
         return;
@@ -694,7 +727,7 @@ for (let slot = 0; slot < MAX_ORDERS; slot++) {
         await saveOrder();
         await ss(`order${n}-3c-canp-rejected`);
 
-        const gcanrFile = await waitForSftpFile(new RegExp(`GCANR.*${orders[slot]}`, 'i'), 'GCANR');
+        const gcanrFile = await waitForSftpFile(new RegExp(`GCANR.*${orders[slot].id}`, 'i'), 'GCANR');
         console.log(`[Order ${n}] GCANR on SFTP: ${gcanrFile}`);
       }
     });
@@ -730,8 +763,8 @@ for (let slot = 0; slot < MAX_ORDERS; slot++) {
 
       // Upload GDELR and verify it appears on SFTP
       const shipRef = `SHP${Date.now().toString().slice(-8)}`;
-      await uploadGDELR(orders[slot], positions, shipRef);
-      const delrFile = await waitForSftpFile(new RegExp(`DELR.*${orders[slot]}`, 'i'), 'GDELR');
+      await uploadGDELR(orders[slot].id, positions, shipRef);
+      const delrFile = await waitForSftpFile(new RegExp(`DELR.*${orders[slot].id}`, 'i'), 'GDELR');
       console.log(`[Order ${n}] GDELR on SFTP: ${delrFile}`);
     });
 
@@ -745,7 +778,7 @@ for (let slot = 0; slot < MAX_ORDERS; slot++) {
 
       // Return qty is half the original (rounded down, min 1)
       const retpPositions = positions.map(p => ({ ...p, qty: Math.max(1, Math.floor(p.qty / 2)) }));
-      const uploaded = await importEDI('GRETP', orders[slot], retpPositions);
+      const uploaded = await importEDI('GRETP', orders[slot].id, retpPositions);
       if (!uploaded) {
         console.log(`[Order ${n}] RETP step skipped — SFTP not configured`);
         return;
@@ -773,7 +806,7 @@ for (let slot = 0; slot < MAX_ORDERS; slot++) {
         await saveOrder();
         await ss(`order${n}-6c-retp-rejected`);
 
-        const gsurnFile = await waitForSftpFile(new RegExp(`GSURN.*${orders[slot]}`, 'i'), 'GSURN');
+        const gsurnFile = await waitForSftpFile(new RegExp(`GSURN.*${orders[slot].id}`, 'i'), 'GSURN');
         console.log(`[Order ${n}] GSURN on SFTP: ${gsurnFile}`);
       }
     });

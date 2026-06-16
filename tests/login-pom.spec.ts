@@ -24,7 +24,7 @@ test('POM Login: valid credentials should reach dashboard', async () => {
   test.setTimeout(300000);
   await setupBrowser();
 
-  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || '', process.env.TEST_PASSWORD || '');
   await loginPage.expectLoginFieldsGone();
 
   console.log('POM LOGIN TEST PASSED');
@@ -36,7 +36,7 @@ test('POM Login: invalid password should stay on login page', async () => {
   await setupBrowser();
 
   await loginPage.goto();
-  await loginPage.fillUsername('ashoaib');
+  await loginPage.fillUsername(process.env.TEST_USERNAME || '');
   await loginPage.fillPassword('wrongpassword');
   await loginPage.clickLogin();
   await page.waitForTimeout(10000);
@@ -99,7 +99,7 @@ test('POM Login: valid username with wrong case password should stay on login pa
   await setupBrowser();
 
   await loginPage.goto();
-  await loginPage.fillUsername('ashoaib');
+  await loginPage.fillUsername(process.env.TEST_USERNAME || '');
   await loginPage.fillPassword('TEST2');
   await loginPage.clickLogin();
   await page.waitForTimeout(10000);

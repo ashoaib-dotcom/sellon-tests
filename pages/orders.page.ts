@@ -9,31 +9,23 @@ export class OrdersPage extends BasePage {
   async navigateToOrders() {
     try {
       const modal = this.page.locator('lb-modal.blocking');
-      if (await modal.isVisible()) {
-        await this.pressEscape();
-      }
+      if (await modal.isVisible()) await this.pressEscape();
     } catch {}
 
-    // Open sidebar
-    await this.page.locator('.menu-icon').click();
+    // Open sidebar (.menubar-item confirmed by codegen)
+    await this.page.locator('.menubar-item, .menu-icon').first().click();
     await this.waitForLoad(2);
 
-    // Expand the Orders parent if the sub-item isn't already visible
-    const orderItems = this.page.locator('nav').getByText('Orders', { exact: true });
-    const visibleCount = await orderItems.count();
-    if (visibleCount < 2) {
-      const parentItem = orderItems.first();
-      await parentItem.scrollIntoViewIfNeeded();
-      await this.page.waitForTimeout(500);
-      await parentItem.click({ force: true });
+    // Expand Orders parent (click first nav "Orders" item)
+    const navOrders = this.page.getByRole('navigation').getByText('Orders', { exact: true });
+    const subVisible = this.page.getByTitle('Orders');
+    if (await subVisible.count() < 2) {
+      await navOrders.first().click({ force: true });
       await this.waitForLoad(2);
     }
 
-    // Click the Orders sub-item
-    const subItem = this.page.locator('nav').getByText('Orders', { exact: true }).nth(1);
-    await subItem.scrollIntoViewIfNeeded();
-    await this.page.waitForTimeout(500);
-    await subItem.dispatchEvent('click');
+    // Click the Orders sub-item (getByTitle confirmed by codegen)
+    await this.page.getByTitle('Orders').nth(1).click();
     await this.waitForLoad(15);
 
     await this.pressEscape();

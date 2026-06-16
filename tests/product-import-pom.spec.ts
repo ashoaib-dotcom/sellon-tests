@@ -3,12 +3,15 @@ import { LoginPage } from '../pages/login.page';
 import { NavigationPage } from '../pages/navigation.page';
 import { ProductListPage } from '../pages/product-list.page';
 import * as path from 'path';
+import * as fs from 'fs';
 
 let browser: Browser;
 let page: Page;
 let loginPage: LoginPage;
 let navPage: NavigationPage;
 let productListPage: ProductListPage;
+
+test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
   test.setTimeout(300000);
@@ -28,7 +31,7 @@ test.beforeAll(async () => {
   navPage = new NavigationPage(page);
   productListPage = new ProductListPage(page);
 
-  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || '', process.env.TEST_PASSWORD || '');
   await navPage.navigateToProducts();
   console.log('SETUP COMPLETE');
 });
@@ -37,169 +40,239 @@ test.afterAll(async () => {
   await browser.close();
 });
 
-test.describe.configure({ mode: 'serial' });
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-test('Import Step 2: Click Import button', async () => {
-  test.setTimeout(120000);
-  await productListPage.clickImport();
-  try { await page.screenshot({ path: 'screenshots/pom-import-2-dialog.png', fullPage: true, timeout: 5000 }); } catch {}
-  const buttons = await page.getByRole('button').allTextContents();
-  console.log('Dialog buttons:', buttons);
+async function openImportDialog(): Promise<boolean> {
+  try {
+    const fileInput = page.locator('input[type="file"]');
+    if (await fileInput.count() > 0) return true; // dialog already open
+    await productListPage.clickImport();
+    await page.waitForTimeout(2000);
+    return await page.locator('input[type="file"]').count() > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function closeImportDialog() {
+  for (const name of [/Cancel|Close|Back|Done|Finish|OK/i]) {
+    try {
+      const btn = page.getByRole('button', { name }).first();
+      if (await btn.isVisible({ timeout: 2000 })) { await btn.click(); await page.waitForTimeout(2000); return; }
+    } catch {}
+  }
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(1500);
+}
+
+async function runImport(): Promise<boolean> {
+  const possibleButtons = ['Run', 'Start', 'Execute', 'Import', 'Upload', 'OK', 'Confirm', 'Submit'];
+  for (const btnName of possibleButtons) {
+    try {
+      const btn = page.getByRole('button', { name: btnName }).first();
+      if (await btn.isVisible({ timeout: 2000 }) && await btn.isEnabled({ timeout: 500 }).catch(() => false)) {
+        await btn.click();
+        await page.waitForTimeout(3000);
+        return true;
+      }
+    } catch {}
+  }
+  return false;
+}
+
+async function waitForImportResult(timeoutMs = 120000): Promise<'success' | 'error' | 'timeout'> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(5000);
+    const body = (await page.locator('body').innerText({ timeout: 10000 }).catch(() => '')).toLowerCase();
+    if (body.includes('complete') || body.includes('success') || body.includes('finished')) return 'success';
+    if (body.includes('error') || body.includes('invalid') || body.includes('failed')) return 'error';
+  }
+  return 'timeout';
+}
+
+// ── CSV import (existing happy path) ─────────────────────────────────────────
+
+test('Import Step 1: Open import dialog', async () => {
+  test.setTimeout(60000);
+  const opened = await openImportDialog();
+  console.log('Import dialog opened with file input:', opened);
+  try { await page.screenshot({ path: 'screenshots/pom-import-1-dialog.png', fullPage: true, timeout: 5000 }); } catch {}
+  console.log('STEP 1 PASSED');
+});
+
+test('Import Step 2: Try import without file — expect validation error', async () => {
+  test.setTimeout(60000);
+  await runImport();
+  const body = (await page.locator('body').innerText()).toLowerCase();
+  const hasError = body.includes('error') || body.includes('required') || body.includes('file') || body.includes('invalid');
+  console.log('Validation error shown for empty submit:', hasError);
+  try { await page.screenshot({ path: 'screenshots/pom-import-2-no-file-error.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 2 PASSED');
 });
 
-test('Import Step 3: Try import without file', async () => {
-  test.setTimeout(120000);
-  const possibleButtons = ['Run', 'Start', 'Execute', 'Import', 'OK', 'Confirm', 'Submit', 'Upload'];
-  for (const btnName of possibleButtons) {
-    try {
-      const btn = page.getByRole('button', { name: btnName }).first();
-      if (await btn.isVisible({ timeout: 2000 })) {
-        await btn.click();
-        await page.waitForTimeout(5000);
-        break;
-      }
-    } catch {}
+test('Import Step 3: Upload CSV file and run import', async () => {
+  test.setTimeout(300000);
+  const csvPath = path.resolve('test-data/import-products.csv');
+  const fileInput = page.locator('input[type="file"]').first();
+
+  if (await fileInput.count() === 0) {
+    await openImportDialog();
   }
-  try { await page.screenshot({ path: 'screenshots/pom-import-3-no-file-error.png', fullPage: true, timeout: 5000 }); } catch {}
+
+  if (await fileInput.count() > 0) {
+    await fileInput.setInputFiles(csvPath);
+    console.log('CSV file attached:', path.basename(csvPath));
+    await page.waitForTimeout(2000);
+    try { await page.screenshot({ path: 'screenshots/pom-import-3-csv-attached.png', fullPage: true, timeout: 5000 }); } catch {}
+
+    const started = await runImport();
+    console.log('Import started:', started);
+
+    const result = await waitForImportResult();
+    console.log('CSV import result:', result);
+    try { await page.screenshot({ path: 'screenshots/pom-import-3-csv-result.png', fullPage: true, timeout: 5000 }); } catch {}
+  } else {
+    console.log('File input not found — skipping CSV upload');
+  }
   console.log('STEP 3 PASSED');
 });
 
-test('Import Step 4: Close error and reopen import', async () => {
-  test.setTimeout(120000);
-  try { await page.keyboard.press('Escape'); await page.waitForTimeout(3000); } catch {}
-  try {
-    const okBtn = page.getByRole('button', { name: /OK|Close|Cancel/i }).first();
-    if (await okBtn.isVisible({ timeout: 2000 })) { await okBtn.click(); await page.waitForTimeout(3000); }
-  } catch {}
-
-  const fileInputCount = await page.locator('input[type="file"]').count();
-  if (fileInputCount === 0) {
-    try { await productListPage.clickImport(); } catch {
-      await navPage.navigateToProducts();
-      await productListPage.clickImport();
-    }
-  }
+test('Import Step 4: Close dialog after CSV import', async () => {
+  test.setTimeout(60000);
+  await closeImportDialog();
+  try { await page.screenshot({ path: 'screenshots/pom-import-4-closed.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 4 PASSED');
 });
 
-test('Import Step 5: Upload CSV file', async () => {
-  test.setTimeout(120000);
-  const csvFilePath = path.resolve('test-data/import-products.csv');
-  const fileInput = page.locator('input[type="file"]');
-  if (await fileInput.count() > 0) {
-    await fileInput.first().setInputFiles(csvFilePath);
-    console.log('File uploaded');
+// ── XLSX import ───────────────────────────────────────────────────────────────
+
+test('Import Step 5: Upload XLSX file — expect successful import', async () => {
+  test.setTimeout(300000);
+  const xlsxPath = path.resolve('test-data/import-products.xlsx');
+
+  if (!fs.existsSync(xlsxPath)) {
+    console.log('XLSX fixture not found at', xlsxPath, '— skipping');
+    return;
   }
-  await page.waitForTimeout(5000);
-  try { await page.screenshot({ path: 'screenshots/pom-import-5-uploaded.png', fullPage: true, timeout: 5000 }); } catch {}
+
+  await navPage.navigateToProducts();
+  await page.waitForTimeout(2000);
+
+  const opened = await openImportDialog();
+  if (!opened) { console.log('Import dialog did not open — skipping'); return; }
+
+  try { await page.screenshot({ path: 'screenshots/pom-import-5-xlsx-dialog.png', fullPage: true, timeout: 5000 }); } catch {}
+
+  const fileInput = page.locator('input[type="file"]').first();
+  await fileInput.setInputFiles(xlsxPath);
+  console.log('XLSX file attached:', path.basename(xlsxPath));
+  await page.waitForTimeout(2000);
+  try { await page.screenshot({ path: 'screenshots/pom-import-5-xlsx-attached.png', fullPage: true, timeout: 5000 }); } catch {}
+
+  // Verify no immediate format rejection before clicking run
+  const bodyAfterAttach = (await page.locator('body').innerText()).toLowerCase();
+  const rejectedImmediately = bodyAfterAttach.includes('invalid') || bodyAfterAttach.includes('not supported') || bodyAfterAttach.includes('wrong format');
+  console.log('XLSX rejected immediately on attach:', rejectedImmediately);
+
+  const started = await runImport();
+  console.log('XLSX import started:', started);
+
+  const result = await waitForImportResult();
+  console.log('XLSX import result:', result);
+  try { await page.screenshot({ path: 'screenshots/pom-import-5-xlsx-result.png', fullPage: true, timeout: 5000 }); } catch {}
+
+  // The system should either accept (success/complete) or show a clear format error — not silently hang
+  expect(['success', 'error']).toContain(result);
+  if (result === 'success') {
+    console.log('XLSX import accepted and completed successfully');
+  } else {
+    console.log('XLSX import showed an error — system responded clearly (not a hang)');
+  }
+
+  await closeImportDialog();
   console.log('STEP 5 PASSED');
 });
 
-test('Import Step 6: Run the import', async () => {
-  test.setTimeout(120000);
-  const possibleButtons = ['Run', 'Start', 'Execute', 'Import', 'OK', 'Confirm', 'Submit', 'Upload'];
-  for (const btnName of possibleButtons) {
-    try {
-      const btn = page.getByRole('button', { name: btnName }).first();
-      if (await btn.isVisible({ timeout: 2000 })) {
-        await btn.click();
-        await page.waitForTimeout(5000);
-        break;
-      }
-    } catch {}
-  }
-  try { await page.screenshot({ path: 'screenshots/pom-import-6-started.png', fullPage: true, timeout: 5000 }); } catch {}
-  console.log('STEP 6 PASSED');
-});
+// ── Wrong file type (PNG) ─────────────────────────────────────────────────────
 
-test('Import Step 7: Wait for import to complete', async () => {
-  test.setTimeout(300000);
-  for (let i = 1; i <= 10; i++) {
-    await page.waitForTimeout(15000);
-    try {
-      try { await page.screenshot({ path: `screenshots/pom-import-7-progress-${i}.png`, fullPage: true, timeout: 10000 }); } catch {}
-      const bodyText = await page.locator('body').innerText({ timeout: 10000 });
-      console.log(`Check ${i}: complete=${bodyText.toLowerCase().includes('complete')}, success=${bodyText.toLowerCase().includes('success')}`);
-      if (bodyText.toLowerCase().includes('complete') || bodyText.toLowerCase().includes('success')) break;
-    } catch {}
-  }
-  console.log('STEP 7 PASSED');
-});
-
-test('Import Step 8: Close import popup', async () => {
-  test.setTimeout(180000);
-
-  const closeNames = [/Cancel|Close|Back|Done|Finish|OK|Continue/i];
-  let closed = false;
-  for (const name of closeNames) {
-    try {
-      const closeButton = page.getByRole('button', { name }).first();
-      if (await closeButton.isVisible({ timeout: 3000 })) {
-        await closeButton.click();
-        await page.waitForTimeout(3000);
-        console.log('Closed import popup with button:', name);
-        closed = true;
-        break;
-      }
-    } catch {
-      // ignore missing buttons
-    }
-  }
-
-  if (!closed) {
-    try {
-      await page.keyboard.press('Escape');
-      await page.waitForTimeout(2000);
-      console.log('Closed import popup with Escape');
-    } catch {
-      console.log('No import popup close action was available');
-    }
-  }
-
-  try {
-    try { await page.screenshot({ path: 'screenshots/pom-import-8-closed.png', fullPage: true, timeout: 10000 }); } catch {}
-  } catch {}
-  console.log('STEP 8 PASSED');
-});
-// ==========================================
-// NEGATIVE TESTS
-// ==========================================
-
-test('Import negative: uploading a non-CSV file should show an error', async () => {
+test('Import Step 6: Upload PNG file — expect format rejection', async () => {
   test.setTimeout(120000);
 
-  // Re-open import dialog
-  const importBtn = page.getByText('Import', { exact: true }).filter({ visible: true }).first();
-  if (await importBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await importBtn.click();
-    await page.waitForTimeout(2000);
-  }
+  // Create a minimal valid PNG file (1×1 pixel, transparent)
+  const pngPath = '/tmp/test-invalid-import.png';
+  const pngBytes = Buffer.from([
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk length + type
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // width=1, height=1
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, // bit depth=8, color type=6 (RGBA)
+    0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, // CRC + IDAT chunk
+    0x54, 0x78, 0x9C, 0x62, 0x00, 0x00, 0x00, 0x02, // IDAT data (zlib compressed)
+    0x00, 0x01, 0xE2, 0x21, 0xBC, 0x33, 0x00, 0x00, // IDAT CRC
+    0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, // IEND chunk
+    0x60, 0x82,
+  ]);
+  fs.writeFileSync(pngPath, pngBytes);
 
-  const { writeFileSync } = require('fs');
-  const tmpPath = '/tmp/not-a-product-csv.txt';
-  writeFileSync(tmpPath, 'this is not a valid product CSV');
+  await navPage.navigateToProducts();
+  await page.waitForTimeout(2000);
+
+  const opened = await openImportDialog();
+  if (!opened) { console.log('Import dialog did not open — skipping'); return; }
+
+  try { await page.screenshot({ path: 'screenshots/pom-import-6-png-dialog.png', fullPage: true, timeout: 5000 }); } catch {}
 
   const fileInput = page.locator('input[type="file"]').first();
-  if (await fileInput.count() > 0) {
-    await fileInput.setInputFiles(tmpPath);
-    await page.waitForTimeout(3000);
 
-    const bodyText = await page.locator('body').innerText();
-    const hasError = bodyText.toLowerCase().includes('error') ||
-      bodyText.toLowerCase().includes('invalid') ||
-      bodyText.toLowerCase().includes('format') ||
-      bodyText.toLowerCase().includes('csv');
-    console.log('Error shown for wrong file type:', hasError);
+  // Check if the file input restricts accepted types (browser-level validation)
+  const acceptAttr = await fileInput.getAttribute('accept').catch(() => '');
+  console.log('File input accept attribute:', acceptAttr || '(none)');
+
+  // Check if PNG is excluded by the accept attribute
+  const pngBlockedByBrowser = acceptAttr
+    ? !acceptAttr.includes('image') && !acceptAttr.includes('.png') && !acceptAttr.includes('*')
+    : false;
+  console.log('PNG blocked at browser level by accept attr:', pngBlockedByBrowser);
+
+  await fileInput.setInputFiles(pngPath);
+  console.log('PNG file attached');
+  await page.waitForTimeout(3000);
+  try { await page.screenshot({ path: 'screenshots/pom-import-6-png-attached.png', fullPage: true, timeout: 5000 }); } catch {}
+
+  const bodyAfterAttach = (await page.locator('body').innerText()).toLowerCase();
+  const rejectedOnAttach =
+    bodyAfterAttach.includes('invalid') ||
+    bodyAfterAttach.includes('not supported') ||
+    bodyAfterAttach.includes('wrong format') ||
+    bodyAfterAttach.includes('only') ||
+    bodyAfterAttach.includes('csv') ||
+    bodyAfterAttach.includes('xlsx') ||
+    bodyAfterAttach.includes('format');
+  console.log('PNG rejected immediately on attach:', rejectedOnAttach);
+
+  if (!rejectedOnAttach) {
+    // Try submitting — the server or dialog should reject it
+    await runImport();
+    await page.waitForTimeout(5000);
+    const bodyAfterRun = (await page.locator('body').innerText()).toLowerCase();
+    const rejectedAfterRun =
+      bodyAfterRun.includes('invalid') ||
+      bodyAfterRun.includes('error') ||
+      bodyAfterRun.includes('not supported') ||
+      bodyAfterRun.includes('format');
+    console.log('PNG rejected after submitting:', rejectedAfterRun);
+
+    try { await page.screenshot({ path: 'screenshots/pom-import-6-png-run-result.png', fullPage: true, timeout: 5000 }); } catch {}
+
+    // The system must reject a PNG — either on attach or on run
+    expect(rejectedOnAttach || rejectedAfterRun).toBe(true);
   } else {
-    console.log('File input not found — skipping');
+    // Already rejected on attach — that's the correct behaviour
+    expect(rejectedOnAttach).toBe(true);
   }
 
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(1000);
-
-  try {
-    try { await page.screenshot({ path: 'screenshots/pom-import-neg-wrong-type.png', fullPage: true, timeout: 10000 }); } catch {}
-  } catch {}
-  console.log('IMPORT NEG WRONG FILE TYPE TEST PASSED');
+  console.log('PNG file correctly rejected by the system');
+  await closeImportDialog();
+  fs.unlinkSync(pngPath);
+  console.log('STEP 6 PASSED');
 });

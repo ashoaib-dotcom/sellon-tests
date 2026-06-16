@@ -30,7 +30,7 @@ test.beforeAll(async () => {
   productListPage = new ProductListPage(page);
   dashboardPage = new DashboardPage(page);
 
-  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || '', process.env.TEST_PASSWORD || '');
   await navPage.navigateToProducts();
   console.log('SETUP COMPLETE');
 });
@@ -276,11 +276,11 @@ test('Export negative: export dialog can be cancelled without exporting', async 
     const menuIcon = page.locator('.menu-icon');
     const visible = await menuIcon.isVisible({ timeout: 5000 });
     if (!visible) {
-      await page.goto(process.env.BASE_URL || 'https://stage.sellon.ch/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.goto(process.env.BASE_URL || '', { waitUntil: 'domcontentloaded', timeout: 30000 });
       await menuIcon.waitFor({ state: 'visible', timeout: 30000 });
     }
   } catch {
-    await page.goto(process.env.BASE_URL || 'https://stage.sellon.ch/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto(process.env.BASE_URL || '', { waitUntil: 'domcontentloaded', timeout: 30000 });
   }
 
   // Navigate to products and try to open export, then cancel

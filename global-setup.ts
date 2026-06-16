@@ -21,7 +21,8 @@ async function globalSetup() {
   const page = await context.newPage();
 
   try {
-    const baseURL = process.env.BASE_URL || 'https://stage.sellon.ch/';
+    const baseURL = process.env.BASE_URL;
+    if (!baseURL) throw new Error('BASE_URL environment variable is not set');
 
     console.log(`📍 Navigating to: ${baseURL}`);
     await page.goto(baseURL, {

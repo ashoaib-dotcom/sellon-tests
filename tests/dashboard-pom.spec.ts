@@ -21,7 +21,7 @@ test.beforeAll(async ({ browser }) => {
   navPage       = new NavigationPage(page);
   productListPage = new ProductListPage(page);
 
-  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || '', process.env.TEST_PASSWORD || '');
 
   // Login complete - now wait for dashboard to fully render
   console.log('⏳ Waiting for dashboard content...');

@@ -31,7 +31,7 @@ test.beforeAll(async () => {
   loginPage = new LoginPage(page);
   ordersPage = new OrdersPage(page);
 
-  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || '', process.env.TEST_PASSWORD || '');
   await ordersPage.navigateToOrders();
   console.log('SETUP COMPLETE — pagination:', await ordersPage.getPaginationText());
 });

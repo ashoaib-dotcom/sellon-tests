@@ -10,7 +10,7 @@ export default defineConfig({
     timeout: 30000,
   },
   use: {
-    baseURL: process.env.BASE_URL || 'https://stage.sellon.ch/',
+    baseURL: process.env.BASE_URL,
     headless: true,
     channel: 'chromium',
     viewport: { width: 1920, height: 1080 },

@@ -41,7 +41,7 @@ test.beforeAll(async () => {
   productListPage = new ProductListPage(page);
   productForm = new ProductFormPage(page);
 
-  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || '', process.env.TEST_PASSWORD || '');
   await navPage.navigateToProducts();
   console.log('SETUP COMPLETE');
   console.log(`  TEST_GTIN = ${TEST_GTIN}  |  TEST_SKU = ${TEST_SKU}`);

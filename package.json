@@ -28,6 +28,7 @@
     "@types/node": "^25.9.1",
     "@types/ssh2-sftp-client": "^9.0.6",
     "dotenv": "^17.4.2",
-    "ssh2-sftp-client": "^12.1.1"
+    "ssh2-sftp-client": "^12.1.1",
+    "xlsx": "^0.18.5"
   }
 }

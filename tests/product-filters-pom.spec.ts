@@ -151,7 +151,7 @@ test.beforeAll(async () => {
   navPage    = new NavigationPage(page);
   productListPage = new ProductListPage(page);
 
-  await loginPage.login(process.env.TEST_USERNAME || 'ashoaib', process.env.TEST_PASSWORD || 'test2');
+  await loginPage.login(process.env.TEST_USERNAME || '', process.env.TEST_PASSWORD || '');
   await navPage.navigateToProducts();
   await productListPage.expectTableVisible();
 

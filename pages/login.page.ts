@@ -3,23 +3,19 @@ import { Page, expect } from '@playwright/test';
 export class LoginPage {
   constructor(private page: Page) {}
 
-  // Locators
-  private usernameField = () =>
-    this.page.locator('input[name="username"], input[id*="user" i], input[placeholder*="user" i], input[type="text"]').first();
+  // Locators (codegen-verified against stage.sellon.ch)
+  private usernameField = () => this.page.getByRole('textbox', { name: 'Username' });
 
-  private passwordField = () =>
-    this.page.locator('input[type="password"]').first();
+  private passwordField = () => this.page.getByRole('textbox', { name: 'Password' });
 
-  private loginButton = () =>
-    this.page.getByRole('button', { name: /login/i }).or(
-      this.page.locator('button[type="submit"], input[type="submit"]').first()
-    );
+  private loginButton = () => this.page.getByRole('button', { name: 'Login' });
 
   private sessionYesButton = () => this.page.getByRole('button', { name: 'Yes' });
 
   // Actions
   async goto() {
-    const url = 'https://stage.sellon.ch/';
+    const url = process.env.BASE_URL;
+    if (!url) throw new Error('BASE_URL environment variable is not set');
     const loginSelector = 'input[name="username"], input[id*="user" i], input[placeholder*="user" i], input[type="text"], input[type="password"]';
 
     for (let attempt = 1; attempt <= 3; attempt++) {
