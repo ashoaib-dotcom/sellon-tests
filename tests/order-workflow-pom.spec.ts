@@ -42,20 +42,27 @@ async function dismissAnyModal() {
 
 async function saveOrder() {
   try {
-    // Codegen confirmed: Save is the 2nd ribbon button (lb-ribbon-big-button:nth-child(2))
+    // 1. Find Save by text label inside lb-ribbon-big-button (most reliable — not position-dependent)
+    const ribbonBtns = page.locator('lb-ribbon-big-button').filter({ visible: true });
+    const count = await ribbonBtns.count();
+    for (let i = 0; i < count; i++) {
+      const text = (await ribbonBtns.nth(i).textContent() || '').trim();
+      console.log(`  saveOrder: ribbon[${i}] = "${text}"`);
+      if (/save|speichern/i.test(text)) {
+        await ribbonBtns.nth(i).click();
+        await page.waitForTimeout(2000);
+        console.log(`  saveOrder: saved via ribbon "${text}"`);
+        return;
+      }
+    }
+    // 2. Fallback: nth-child(2) from codegen observation
     const ribbon = page.locator('lb-ribbon-big-button:nth-child(2) > .lb-ribbon-icon').filter({ visible: true }).first();
-    if (await ribbon.isVisible({ timeout: 1500 }).catch(() => false)) {
+    if (await ribbon.isVisible({ timeout: 1000 }).catch(() => false)) {
       await ribbon.click();
       await page.waitForTimeout(2000);
-      console.log('  saveOrder: saved');
-      return;
-    }
-    // Fallback: named Save button
-    const btn = page.getByRole('button', { name: /^save$/i }).filter({ visible: true }).first();
-    if (await btn.isVisible({ timeout: 1000 }).catch(() => false) && await btn.isEnabled({ timeout: 500 }).catch(() => false)) {
-      await btn.click();
-      await page.waitForTimeout(2000);
-      console.log('  saveOrder: saved via button');
+      console.log('  saveOrder: saved via ribbon nth-child(2) fallback');
+    } else {
+      console.log('  saveOrder: no save button found — skipping');
     }
   } catch {}
 }
@@ -389,9 +396,17 @@ async function confirmAllPositions(n: number): Promise<number> {
   await dismissAnyModal();
   await clickTab('Order items');
   await page.waitForTimeout(2000);
+  await ss(`order${n}-4a-before-confirm`);
+
+  // Log all visible buttons so we can see what's actually on screen
+  const allBtns = page.getByRole('button').filter({ visible: true });
+  const allBtnTexts = await allBtns.allTextContents();
+  console.log(`[Order ${n}] Visible buttons on Order items tab: ${JSON.stringify(allBtnTexts.map(t => t.trim()).filter(Boolean))}`);
+
   // Codegen confirmed exact button name: "Confirm position"
   const btns = page.getByRole('button', { name: 'Confirm position' }).filter({ visible: true });
   const count = await btns.count();
+  console.log(`[Order ${n}] "Confirm position" buttons found: ${count}`);
   let confirmed = 0;
   for (let i = 0; i < count; i++) {
     try {
@@ -403,7 +418,8 @@ async function confirmAllPositions(n: number): Promise<number> {
     } catch {}
   }
   await saveOrder();
-  console.log(`[Order ${n}] confirmAllPositions: ${confirmed}/${count}`);
+  await ss(`order${n}-4b-after-confirm`);
+  console.log(`[Order ${n}] confirmAllPositions: ${confirmed}/${count} confirmed`);
   return confirmed;
 }
 
@@ -663,9 +679,11 @@ for (let slot = 0; slot < MAX_ORDERS; slot++) {
       opened = await findAndOpenOrder(orders[slot].id);
       if (!opened) { test.skip(); return; }
 
-      await ss(`order${n}-1-open`);
+      // Include actual order ID in screenshot name so each order is distinguishable
+      await ss(`order${n}-id${orders[slot].id}-1-open`);
 
       positions = await readPositions();
+      console.log(`[Order ${n}] Positions found: ${positions.length} — ${positions.map(p => `${p.sku}(qty:${p.qty})`).join(', ') || 'none'}`);
       if (positions.length === 0) {
         console.warn(`[Order ${n}] No positions parsed — SFTP steps will be skipped, UI steps will continue`);
       }
@@ -817,10 +835,26 @@ for (let slot = 0; slot < MAX_ORDERS; slot++) {
       if (!opened) { test.skip(); return; }
 
       await saveOrder();
-      const status = await getOrderStatus();
-      console.log(`[Order ${n}] Final status: "${status}"`);
-      await ss(`order${n}-7-final`);
+      await ss(`order${n}-id${orders[slot].id}-7-final`);
       await closeOrder();
+
+      // Re-read status from the orders list (reliable — same method as discoverOrders)
+      await ordersPage.navigateToOrders();
+      await page.waitForTimeout(2000);
+      const statusColIdx = await ordersPage.findColumnIndex('Status');
+      const rows = page.locator('tbody tr');
+      const rowCount = await rows.count();
+      let finalStatus = 'not-found-in-list';
+      for (let i = 0; i < rowCount; i++) {
+        const cells = rows.nth(i).locator('td');
+        const idColIdx = await ordersPage.findColumnIndex('ID');
+        const id = (await cells.nth(idColIdx).textContent() || '').trim();
+        if (id === orders[slot].id) {
+          finalStatus = statusColIdx >= 0 ? (await cells.nth(statusColIdx).textContent() || '').trim() : 'unknown';
+          break;
+        }
+      }
+      console.log(`[Order ${n}] Final status from list: "${finalStatus}" (expected: Confirmed or Shipped)`);
     });
   });
 }
