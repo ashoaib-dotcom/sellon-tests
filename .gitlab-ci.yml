@@ -16,6 +16,7 @@ default:
     - npm --version
     - npm ci
     - npx playwright install chromium
+    - sudo -n npx playwright install-deps chromium 2>/dev/null || echo "System deps not installable without sudo — skipping (IT must pre-install them)"
 
 # Shared template for all test jobs
 .test-template:
