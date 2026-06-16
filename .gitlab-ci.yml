@@ -10,6 +10,8 @@ default:
 # Shared template for all test jobs
 .test-template:
   stage: test
+  tags:
+    - kasm
   script:
     - mkdir -p screenshots
     - npx playwright test $TEST_FILE --reporter=html,list
