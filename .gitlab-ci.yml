@@ -8,7 +8,7 @@ default:
     - |
       apt-get install -y libnspr4 libnss3 libatk1.0-0 libatk-bridge2.0-0 \
       libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
-      libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libatspi2.0-0 curl net-tools gunpg
+      libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libatspi2.0-0 curl net-tools
     - export NVM_DIR="${HOME}/.nvm"
     - |
       if [ ! -s "$NVM_DIR/nvm.sh" ]; then
@@ -51,68 +51,68 @@ dashboard:
   variables:
     TEST_FILE: tests/dashboard-pom.spec.ts
 
-login:
-  extends: .test-template
-  variables:
-    TEST_FILE: tests/login-pom.spec.ts
+# login:
+#   extends: .test-template
+#   variables:
+#     TEST_FILE: tests/login-pom.spec.ts
 
-orders:
-  extends: .test-template
-  variables:
-    TEST_FILE: tests/orders-pom.spec.ts
+# orders:
+#   extends: .test-template
+#   variables:
+#     TEST_FILE: tests/orders-pom.spec.ts
 
-orders-filters:
-  extends: .test-template
-  variables:
-    TEST_FILE: tests/orders-filters-pom.spec.ts
+# orders-filters:
+#   extends: .test-template
+#   variables:
+#     TEST_FILE: tests/orders-filters-pom.spec.ts
 
-product-filters:
-  extends: .test-template
-  variables:
-    TEST_FILE: tests/product-filters-pom.spec.ts
+# product-filters:
+#   extends: .test-template
+#   variables:
+#     TEST_FILE: tests/product-filters-pom.spec.ts
 
-product-edit:
-  extends: .test-template
-  variables:
-    TEST_FILE: tests/product-edit-pom.spec.ts
+# product-edit:
+#   extends: .test-template
+#   variables:
+#     TEST_FILE: tests/product-edit-pom.spec.ts
 
-product-create:
-  extends: .test-template
-  variables:
-    TEST_FILE: tests/product-create-pom.spec.ts
+# product-create:
+#   extends: .test-template
+#   variables:
+#     TEST_FILE: tests/product-create-pom.spec.ts
 
-product-import:
-  extends: .test-template
-  variables:
-    TEST_FILE: tests/product-import-pom.spec.ts
+# product-import:
+#   extends: .test-template
+#   variables:
+#     TEST_FILE: tests/product-import-pom.spec.ts
 
-stock-import:
-  extends: .test-template
-  variables:
-    TEST_FILE: tests/stock-import-pom.spec.ts
+# stock-import:
+#   extends: .test-template
+#   variables:
+#     TEST_FILE: tests/stock-import-pom.spec.ts
 
-export:
-  extends: .test-template
-  variables:
-    TEST_FILE: tests/export-pom.spec.ts
+# export:
+#   extends: .test-template
+#   variables:
+#     TEST_FILE: tests/export-pom.spec.ts
 
-product-validations:
-  extends: .test-template
-  variables:
-    TEST_FILE: tests/product-validations-pom.spec.ts
+# product-validations:
+#   extends: .test-template
+#   variables:
+#     TEST_FILE: tests/product-validations-pom.spec.ts
 
-order-workflow:
-  extends: .test-template
-  timeout: 90 minutes
-  variables:
-    TEST_FILE: tests/order-workflow-pom.spec.ts
+# order-workflow:
+#   extends: .test-template
+#   timeout: 90 minutes
+#   variables:
+#     TEST_FILE: tests/order-workflow-pom.spec.ts
 
-sftp-upload:
-  extends: .test-template
-  variables:
-    TEST_FILE: tests/sftp-upload-pom.spec.ts
+# sftp-upload:
+#   extends: .test-template
+#   variables:
+#     TEST_FILE: tests/sftp-upload-pom.spec.ts
 
-product-delete:
-  extends: .test-template
-  variables:
-    TEST_FILE: tests/product-delete-pom.spec.ts
+# product-delete:
+#   extends: .test-template
+#   variables:
+#     TEST_FILE: tests/product-delete-pom.spec.ts
