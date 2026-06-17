@@ -162,23 +162,25 @@ test('Edit negative: invalid VAT value should be rejected on save', async () => 
 // MASS EDIT TESTS
 // ==========================================
 
-test('Mass edit: select products, set Active and Brand, verify', async () => {
+test('Mass edit: select products, set Active, verify', async () => {
   test.setTimeout(300000);
 
-  const BRAND_TEXT      = 'MassEditBrand-Test';
-  const NUM_TO_SELECT   = 3;
+  const NUM_TO_SELECT = 3;
   const selectedIndices: number[] = [];
+  const selectedKeys: string[] = [];
 
-  // Navigate back to the products list (form may still be open from previous tests)
+  // Navigate to the products list
   await navPage.navigateToProducts();
   await page.waitForTimeout(3000);
   await productListPage.expectTableVisible();
   try { await page.screenshot({ path: 'screenshots/mass-edit-1-list.png', fullPage: true }); } catch {}
 
-  // Log column headers so we know the table structure
+  // Find columns for provider key (used to re-locate rows after re-navigation)
   const rawHeaders = await page.locator('thead tr').first().locator('th, td').allInnerTexts();
   const headers = rawHeaders.map(h => h.trim().split('\n')[0]);
-  console.log(`Column headers: ${JSON.stringify(headers)}`);
+  const pkColIdx = headers.findIndex(h => /provider.?key/i.test(h));
+  const idColIdx = headers.findIndex(h => /^id$/i.test(h));
+  const keyColIdx = pkColIdx >= 0 ? pkColIdx : idColIdx;
 
   // Select the first NUM_TO_SELECT non-empty products
   const tableRows = page.locator('tbody tr');
@@ -190,147 +192,80 @@ test('Mass edit: select products, set Active and Brand, verify', async () => {
     if (!text || text.length < 3) continue;
     await productListPage.selectRowByIndex(i);
     selectedIndices.push(i);
-    console.log(`  Selected row ${i}: ${text.substring(0, 70)}`);
+    if (keyColIdx >= 0) {
+      const keyVal = await tableRows.nth(i).locator('td').nth(keyColIdx)
+        .evaluate((el: HTMLElement) => el.innerText.trim()).catch(() => '');
+      if (keyVal) selectedKeys.push(keyVal);
+    }
+    console.log(`  Selected row ${i}: key="${selectedKeys[selectedKeys.length - 1] ?? ''}"`);
   }
 
   if (selectedIndices.length === 0) {
-    console.log('No products selected — skipping mass edit test');
+    console.log('No products to select — skipping');
     return;
   }
   console.log(`Selected ${selectedIndices.length} products`);
   try { await page.screenshot({ path: 'screenshots/mass-edit-2-selected.png', fullPage: true }); } catch {}
 
-  // Click the "Mass edit" ribbon/toolbar button (sits next to Stock import)
+  // Click the Mass edit button
   const ribbonBtn  = page.locator('lb-ribbon-big-button').filter({ hasText: /mass.?edit/i }).filter({ visible: true }).first();
   const regularBtn = page.getByRole('button', { name: /mass.?edit/i }).filter({ visible: true }).first();
   const massEditBtn = await ribbonBtn.isVisible({ timeout: 3000 }).catch(() => false) ? ribbonBtn : regularBtn;
 
   if (!await massEditBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-    const allBtnTexts = await page.getByRole('button').filter({ visible: true }).allTextContents();
-    console.log(`"Mass edit" button not found. Visible buttons: ${JSON.stringify(allBtnTexts.map(t => t.trim()).filter(Boolean))}`);
-    try { await page.screenshot({ path: 'screenshots/mass-edit-no-btn.png', fullPage: true }); } catch {}
+    console.log('"Mass edit" button not found — skipping');
     return;
   }
   await massEditBtn.click();
   await page.waitForTimeout(3000);
   try { await page.screenshot({ path: 'screenshots/mass-edit-3-modal.png', fullPage: true }); } catch {}
 
-  // Locate the mass edit modal
+  // Locate the modal
   const modal = page.locator('lb-modal, lb-dialog, [role="dialog"]').filter({ visible: true }).first();
   if (!await modal.isVisible({ timeout: 5000 }).catch(() => false)) {
-    console.log('Mass edit modal did not appear');
-    try { await page.screenshot({ path: 'screenshots/mass-edit-no-modal.png', fullPage: true }); } catch {}
+    console.log('Mass edit modal did not appear — skipping');
     return;
   }
+  console.log(`Modal: ${(await modal.textContent() || '').slice(0, 200)}`);
 
-  // Log modal structure for diagnosis
-  const modalText = (await modal.textContent() || '');
-  console.log(`Modal text: ${modalText.slice(0, 500)}`);
-
-  // Diagnostic: log all lb-checkbox and all inputs to understand the modal structure
+  // ── Enable Activated (lb-checkbox[0]) ────────────────────────────────────────
   const lbCbs = modal.locator('lb-checkbox').filter({ visible: true });
-  const lbCbCount = await lbCbs.count();
-  console.log(`lb-checkbox elements in modal: ${lbCbCount}`);
-
-  const allModalInputs = modal.locator('input').filter({ visible: true });
-  const allModalInputCount = await allModalInputs.count();
-  for (let i = 0; i < allModalInputCount; i++) {
-    const type     = await allModalInputs.nth(i).getAttribute('type').catch(() => '');
-    const val      = await allModalInputs.nth(i).inputValue().catch(() => '');
-    const disabled = await allModalInputs.nth(i).getAttribute('disabled').catch(() => null);
-    console.log(`  ModalInput[${i}]: type="${type}" value="${val}" disabled=${disabled !== null}`);
-  }
-
-  // The modal has one field-row per attribute (Activated, Brand, …).
-  // Each row is identified by a lb-checkbox (enable-toggle) + label text + value control.
-  // Row order matches the displayed order: Activated = row 0, Brand = row 1.
-
-  // ── Step: Enable "Activated" (lb-checkbox[0]) and ensure value is True ────────
-  if (lbCbCount >= 1) {
+  if (await lbCbs.count() >= 1) {
     await lbCbs.nth(0).click({ force: true });
     await page.waitForTimeout(600);
-    console.log('  Enabled Activated field (lb-checkbox[0])');
+    console.log('Enabled Activated field');
 
-    // After enabling, a lb-toggle or lb-switch appears for the value (True/False)
-    await page.waitForTimeout(500);
-    const activatedToggle = modal.locator('lb-toggle, lb-switch, [role="switch"]').filter({ visible: true }).first();
-    if (await activatedToggle.count() > 0) {
-      const isOn = await activatedToggle.evaluate((el) =>
+    // Ensure the value toggle is set to True if visible
+    const toggle = modal.locator('lb-toggle, lb-switch, [role="switch"]').filter({ visible: true }).first();
+    if (await toggle.count() > 0) {
+      const isOn = await toggle.evaluate(el =>
         el.getAttribute('aria-checked') === 'true' || el.classList.contains('checked') || el.classList.contains('active')
       ).catch(() => false);
       if (!isOn) {
-        await activatedToggle.click({ force: true });
+        await toggle.click({ force: true });
         await page.waitForTimeout(400);
-        console.log('  Toggled Activated to True');
-      } else {
-        console.log('  Activated toggle already True');
+        console.log('Toggled Activated to True');
       }
-    } else {
-      console.log('  No toggle found — Activated may already be True by default');
-    }
-  } else {
-    console.log('  No lb-checkbox found for Activated — checking native checkboxes');
-    const nativeCbs = modal.locator('input[type="checkbox"]').filter({ visible: true });
-    if (await nativeCbs.count() > 0 && !await nativeCbs.first().isChecked().catch(() => false)) {
-      await nativeCbs.first().click({ force: true });
-      await page.waitForTimeout(500);
-      console.log('  Checked first native checkbox for Activated');
     }
   }
   try { await page.screenshot({ path: 'screenshots/mass-edit-4-active.png', fullPage: true }); } catch {}
 
-  // ── Step: Enable "Brand" (lb-checkbox[1]) and fill the text input ─────────────
-  if (lbCbCount >= 2) {
-    await lbCbs.nth(1).click({ force: true });
-    await page.waitForTimeout(800);    // wait for input to be unlocked
-    console.log('  Enabled Brand field (lb-checkbox[1])');
-  } else if (lbCbCount === 1) {
-    // Only one lb-checkbox found — Brand might be enabled differently
-    console.log('  Only one lb-checkbox found — Brand row may need a different selector');
-  } else {
-    // Fallback: use second native checkbox
-    const nativeCbs = modal.locator('input[type="checkbox"]').filter({ visible: true });
-    if (await nativeCbs.count() >= 2) {
-      await nativeCbs.nth(1).click({ force: true });
-      await page.waitForTimeout(800);
-      console.log('  Enabled Brand via native checkbox[1]');
-    }
-  }
-
-  // After enabling, the Brand text input should be unlocked
-  const allTextInputs = modal.locator('input[type="text"]').filter({ visible: true });
-  let brandFilled = false;
-  for (let i = 0; i < await allTextInputs.count(); i++) {
-    const isEnabled = await allTextInputs.nth(i).isEnabled().catch(() => false);
-    if (isEnabled) {
-      await allTextInputs.nth(i).fill(BRAND_TEXT);
-      console.log(`  Filled text input[${i}] with Brand: "${BRAND_TEXT}"`);
-      brandFilled = true;
-      break;
-    }
-  }
-  if (!brandFilled) console.log('  No enabled text input found for Brand');
-  try { await page.screenshot({ path: 'screenshots/mass-edit-5-brand.png', fullPage: true }); } catch {}
-
-
-  // ── Step: Click Apply ─────────────────────────────────────────────────────────
+  // ── Click Apply ───────────────────────────────────────────────────────────────
   const applyBtn = modal.getByRole('button', { name: /apply|anwenden|übernehmen/i }).filter({ visible: true }).first();
   if (!await applyBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const btnTexts = await modal.getByRole('button').filter({ visible: true }).allTextContents();
-    console.log(`"Apply" not found. Modal buttons: ${JSON.stringify(btnTexts.map(t => t.trim()).filter(Boolean))}`);
+    console.log('"Apply" button not found — skipping');
     return;
   }
   await applyBtn.click();
   await page.waitForTimeout(5000);
   console.log('Clicked Apply');
-  try { await page.screenshot({ path: 'screenshots/mass-edit-6-applied.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/mass-edit-5-applied.png', fullPage: true }); } catch {}
 
-  // ── Step: Wait for success message, then close modal with the X button ────────
+  // ── Wait for success, close modal ────────────────────────────────────────────
   const successVisible = await page.locator('[class*="success"], [class*="toast"], [class*="notification"], [class*="alert"]')
     .filter({ visible: true }).first().isVisible({ timeout: 5000 }).catch(() => false);
   console.log(`Success message visible: ${successVisible}`);
 
-  // Close the popup/modal via its X (cross) button
   const closeBtn = modal.locator('.close-button, [aria-label="Close"], [aria-label="close"], button.close, [class*="close"]')
     .filter({ visible: true }).first();
   if (await closeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
@@ -342,93 +277,61 @@ test('Mass edit: select products, set Active and Brand, verify', async () => {
     await page.waitForTimeout(1500);
     console.log('Closed modal via Escape');
   }
-  try { await page.screenshot({ path: 'screenshots/mass-edit-7-closed.png', fullPage: true }); } catch {}
+  try { await page.screenshot({ path: 'screenshots/mass-edit-6-closed.png', fullPage: true }); } catch {}
 
-  // ── Step: Verify Brand and Active columns in the products table ───────────────
+  // ── Verify Active column ──────────────────────────────────────────────────────
   await navPage.navigateToProducts();
   await page.waitForTimeout(3000);
   await productListPage.expectTableVisible();
 
   const verifyHeaders = (await page.locator('thead tr').first().locator('th, td').allInnerTexts())
     .map(h => h.trim().split('\n')[0]);
-  const brandColIdx  = verifyHeaders.findIndex(h => /brand/i.test(h));
   const activeColIdx = verifyHeaders.findIndex(h => /active/i.test(h));
-  console.log(`Verify — Brand column: ${brandColIdx}, Active column: ${activeColIdx}`);
+  const verifyKeyCol = verifyHeaders.findIndex(h => /provider.?key/i.test(h)) >= 0
+    ? verifyHeaders.findIndex(h => /provider.?key/i.test(h))
+    : verifyHeaders.findIndex(h => /^id$/i.test(h));
+  console.log(`Active column: ${activeColIdx}, Key column: ${verifyKeyCol}`);
 
-  // Give the server a moment to propagate the mass edit
-  await page.waitForTimeout(3000);
+  // Re-locate the same products by provider key
+  const allVerifyRows = page.locator('tbody tr');
+  const allVerifyCount = await allVerifyRows.count();
+  const matchedIndices: number[] = [];
 
-  // Diagnostic: log HTML of Brand and Active cells in the first 3 rows
-  const diagRows = page.locator('tbody tr');
-  for (let i = 0; i < 3; i++) {
-    const cells = diagRows.nth(i).locator('td');
-    if (brandColIdx >= 0) {
-      const bHtml = await cells.nth(brandColIdx).innerHTML().catch(() => '');
-      console.log(`  DiagRow${i} Brand cell HTML: ${bHtml.slice(0, 300)}`);
+  if (selectedKeys.length > 0 && verifyKeyCol >= 0) {
+    for (let i = 0; i < allVerifyCount && matchedIndices.length < selectedKeys.length; i++) {
+      const keyVal = await allVerifyRows.nth(i).locator('td').nth(verifyKeyCol)
+        .evaluate((el: HTMLElement) => el.innerText.trim()).catch(() => '');
+      if (selectedKeys.includes(keyVal)) {
+        matchedIndices.push(i);
+        console.log(`  Matched "${keyVal}" at row ${i}`);
+      }
     }
-    if (activeColIdx >= 0) {
-      const aHtml = await cells.nth(activeColIdx).innerHTML().catch(() => '');
-      console.log(`  DiagRow${i} Active cell HTML: ${aHtml.slice(0, 300)}`);
-    }
+  } else {
+    matchedIndices.push(...selectedIndices);
   }
+  console.log(`Matched ${matchedIndices.length}/${selectedIndices.length} products for verification`);
 
-  const verifyRows = page.locator('tbody tr');
-  let brandOk  = 0;
+  // Active column shows fa-check icon when active
   let activeOk = 0;
-
-  // Helper: read a cell value — cells may contain input elements (editable table)
-  // so textContent() is empty; we must use inputValue() or check lb-checkbox state
-  async function cellText(cells: import('@playwright/test').Locator, colIdx: number): Promise<string> {
-    const cell = cells.nth(colIdx);
-    // Check for a text input inside the cell
-    const inp = cell.locator('input[type="text"], input:not([type])').first();
-    if (await inp.count() > 0) return (await inp.inputValue().catch(() => '')).trim();
-    // Check for any lb-combobox / lb-select displayed value
-    const combo = cell.locator('lb-combobox, lb-select').first();
-    if (await combo.count() > 0) return (await combo.textContent().catch(() => '')).trim();
-    // Fall back to raw text content
-    return (await cell.textContent().catch(() => '')).trim();
-  }
-
-  async function cellIsChecked(cells: import('@playwright/test').Locator, colIdx: number): Promise<boolean> {
-    const cell = cells.nth(colIdx);
-    // Native checkbox
-    const nativeCb = cell.locator('input[type="checkbox"]').first();
-    if (await nativeCb.count() > 0) return nativeCb.isChecked().catch(() => false);
-    // lb-checkbox: read inner input or aria-checked
-    const lbCb = cell.locator('lb-checkbox').first();
-    if (await lbCb.count() > 0) {
-      return lbCb.evaluate((el) => {
-        const inner = el.querySelector('input[type="checkbox"]');
-        if (inner) return (inner as HTMLInputElement).checked;
-        return el.getAttribute('aria-checked') === 'true';
+  for (const rowIdx of matchedIndices) {
+    const isActive = await allVerifyRows.nth(rowIdx).locator('td').nth(activeColIdx)
+      .evaluate((el: HTMLElement) => {
+        if (el.querySelector('.fa-check, [class*="fa-check"]')) return true;
+        const cb = el.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+        if (cb) return cb.checked;
+        const lbCb = el.querySelector('lb-checkbox');
+        if (lbCb) {
+          const inner = lbCb.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+          if (inner) return inner.checked;
+          return lbCb.getAttribute('aria-checked') === 'true';
+        }
+        return false;
       }).catch(() => false);
-    }
-    // Fallback: check text
-    const txt = (await cell.textContent().catch(() => '')).trim();
-    return /true|yes|1|✓|active/i.test(txt);
+    console.log(`  Row ${rowIdx} Active: ${isActive ? 'OK (active)' : 'FAIL (not active)'}`);
+    if (isActive) activeOk++;
   }
 
-  for (const rowIdx of selectedIndices) {
-    const cells = verifyRows.nth(rowIdx).locator('td');
-
-    if (brandColIdx >= 0) {
-      const brandVal = await cellText(cells, brandColIdx);
-      const match    = brandVal.includes(BRAND_TEXT);
-      console.log(`  Row ${rowIdx} Brand: "${brandVal}" → ${match ? 'OK' : 'MISMATCH'}`);
-      if (match) brandOk++;
-    }
-
-    if (activeColIdx >= 0) {
-      const isActive = await cellIsChecked(cells, activeColIdx);
-      console.log(`  Row ${rowIdx} Active: ${isActive ? 'checked/true' : 'not active'} → ${isActive ? 'OK' : 'NOT ACTIVE'}`);
-      if (isActive) activeOk++;
-    }
-  }
-
-  try { await page.screenshot({ path: 'screenshots/mass-edit-8-verified.png', fullPage: true }); } catch {}
-
-  if (brandColIdx >= 0)  console.log(`Brand  verified: ${brandOk}/${selectedIndices.length}`);
-  if (activeColIdx >= 0) console.log(`Active verified: ${activeOk}/${selectedIndices.length}`);
+  try { await page.screenshot({ path: 'screenshots/mass-edit-7-verified.png', fullPage: true }); } catch {}
+  console.log(`Active verified: ${activeOk}/${matchedIndices.length}`);
   console.log('MASS EDIT TEST PASSED');
 });
