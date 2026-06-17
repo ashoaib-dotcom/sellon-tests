@@ -194,17 +194,16 @@ test('Step 2: Add shipment on Shipping tab', async () => {
   await page.waitForTimeout(3000);
   await ss('step2-shipment-dialog-opened');
 
-  // Log everything inside the dialog so we know what fields are available
-  const dialog = page.locator('lb-dialog, [role="dialog"]').filter({ visible: true }).first();
-  if (await dialog.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const dialogText = (await dialog.textContent() || '').trim();
-    console.log(`Dialog content: ${dialogText.substring(0, 500)}`);
-    await logButtons('Shipment dialog');
+  // The modal is lb-modal (not lb-dialog) — use a broader selector
+  const modal = page.locator('lb-modal, lb-dialog, [role="dialog"]').filter({ visible: true }).first();
+  if (await modal.isVisible({ timeout: 5000 }).catch(() => false)) {
+    const modalText = (await modal.textContent() || '').trim();
+    console.log(`Modal content preview: ${modalText.substring(0, 300)}`);
 
-    // Log all input fields in the dialog
-    const inputs = dialog.locator('input, select, textarea').filter({ visible: true });
+    // Log all input fields inside the modal
+    const inputs = modal.locator('input, select, textarea').filter({ visible: true });
     const inputCount = await inputs.count();
-    console.log(`Dialog input fields count: ${inputCount}`);
+    console.log(`Modal input fields: ${inputCount}`);
     for (let i = 0; i < inputCount; i++) {
       const placeholder = await inputs.nth(i).getAttribute('placeholder').catch(() => '');
       const label       = await inputs.nth(i).getAttribute('aria-label').catch(() => '');
@@ -212,21 +211,33 @@ test('Step 2: Add shipment on Shipping tab', async () => {
       console.log(`  Input[${i}]: name="${name}" placeholder="${placeholder}" aria-label="${label}"`);
     }
 
-    // Save inside the dialog (look for Save/OK/Confirm button inside dialog)
-    const dialogSaveBtn = dialog.getByRole('button', { name: /save|ok|confirm|add|create/i }).filter({ visible: true }).first();
-    if (await dialogSaveBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await dialogSaveBtn.click();
+    // Log all buttons inside the modal
+    const modalBtns = modal.getByRole('button').filter({ visible: true });
+    const modalBtnTexts = await modalBtns.allTextContents();
+    console.log(`Modal buttons: ${JSON.stringify(modalBtnTexts.map(t => t.trim()).filter(Boolean))}`);
+
+    // Click Save/OK/Confirm inside the modal
+    const modalSaveBtn = modal.getByRole('button', { name: /save|ok|confirm|add|create/i }).filter({ visible: true }).first();
+    if (await modalSaveBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await modalSaveBtn.click();
       await page.waitForTimeout(3000);
-      console.log('  Clicked save in shipment dialog');
-      await ss('step2-shipment-dialog-saved');
+      console.log('  Clicked save in shipment modal');
+      await ss('step2-modal-saved');
     } else {
-      console.log('  No save button found in dialog — logging and skipping');
-      await ss('step2-dialog-no-save-btn');
+      // Close modal without saving so it doesn't block subsequent actions
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1500);
+      console.log('  No save button found in modal — dismissed with Escape');
+      await ss('step2-modal-dismissed');
     }
   } else {
-    console.log('No dialog appeared after clicking Add shipment');
-    await ss('step2-no-dialog');
+    console.log('No modal appeared after clicking Create new shipment');
+    await ss('step2-no-modal');
   }
+
+  // Wait for modal to be fully closed before saving the order
+  await page.locator('lb-modal').filter({ visible: true }).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(1000);
 
   // Save the order
   await save();
