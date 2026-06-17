@@ -25,9 +25,8 @@ default:
 .test-template:
   stage: test
   image: debian:trixie
-  user: root
   tags:
-    - kasm
+    - kasm_docker
   script:
     - mkdir -p screenshots
     - npx playwright test $TEST_FILE --reporter=html,list
