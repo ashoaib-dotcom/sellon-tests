@@ -181,11 +181,11 @@ test('Step 2: Add shipment on Shipping tab', async () => {
   await ss('step2-shipping-tab');
   await logButtons('Shipping tab');
 
-  // Click "Add shipment" button
-  const addShipmentBtn = page.getByRole('button', { name: /add shipment/i }).filter({ visible: true }).first();
+  // Click "Create new shipment" button
+  const addShipmentBtn = page.getByRole('button', { name: /create new shipment|add shipment/i }).filter({ visible: true }).first();
   if (!await addShipmentBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-    console.log('"Add shipment" button not found — logging buttons for diagnosis');
-    await logButtons('Shipping tab (add shipment missing)');
+    console.log('"Create new shipment" button not found — logging buttons for diagnosis');
+    await logButtons('Shipping tab (create shipment missing)');
     await ss('step2-no-add-shipment-btn');
     return;
   }
