@@ -25,6 +25,7 @@ default:
 .test-template:
   stage: test
   image: debian:trixie
+  user: root
   tags:
     - kasm
   script:
