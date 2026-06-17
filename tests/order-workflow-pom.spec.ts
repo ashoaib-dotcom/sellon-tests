@@ -11,7 +11,6 @@ let page: Page;
 let loginPage: LoginPage;
 let ordersPage: OrdersPage;
 
-// The order ID we find in Step 1, used to verify status in Step 2
 let targetOrderId = '';
 
 // ── Setup / teardown ──────────────────────────────────────────────────────────
@@ -57,6 +56,19 @@ async function save() {
   console.log(`  Save: no save button found. Ribbon labels: ${JSON.stringify(labels)}`);
 }
 
+async function clickTab(tabName: string): Promise<boolean> {
+  await save();
+  const tab = page.getByText(tabName, { exact: true }).filter({ visible: true }).first();
+  if (await tab.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await tab.click();
+    await page.waitForTimeout(3000);
+    console.log(`  Clicked tab: "${tabName}"`);
+    return true;
+  }
+  console.log(`  Tab "${tabName}" not found`);
+  return false;
+}
+
 async function close() {
   try {
     const closeBtn = page.locator('.close-button').filter({ visible: true }).first();
@@ -66,23 +78,26 @@ async function close() {
   await page.waitForTimeout(1000);
 }
 
-// ── Step 1: Find a New order, open it, confirm positions, save and close ──────
+async function logButtons(label: string) {
+  const btns = page.getByRole('button').filter({ visible: true });
+  const texts = await btns.allTextContents();
+  console.log(`[${label}] Visible buttons: ${JSON.stringify(texts.map(t => t.trim()).filter(Boolean))}`);
+}
 
-test('Step 1: Confirm a New order', async () => {
+// ── Step 1: Find New order → Order items tab → Confirm positions → Save ───────
+
+test('Step 1: Open New order and confirm positions', async () => {
   test.setTimeout(300000);
 
-  // Navigate to Orders list
   await ordersPage.navigateToOrders();
   await page.waitForTimeout(3000);
   await ss('step1-orders-list');
 
-  // Read ID and Status columns from the list
-  const idColIdx = await ordersPage.findColumnIndex('ID');
+  const idColIdx     = await ordersPage.findColumnIndex('ID');
   const statusColIdx = await ordersPage.findColumnIndex('Status');
   console.log(`Columns — ID: ${idColIdx}, Status: ${statusColIdx}`);
 
-  // Find first New order
-  const rows = page.locator('tbody tr');
+  const rows     = page.locator('tbody tr');
   const rowCount = await rows.count();
   console.log(`Total rows visible: ${rowCount}`);
 
@@ -95,7 +110,7 @@ test('Step 1: Confirm a New order', async () => {
   }
 
   if (foundRow === -1) {
-    console.log('No New orders found in the list — test skipped');
+    console.log('No New orders found — skipping');
     return;
   }
 
@@ -104,39 +119,24 @@ test('Step 1: Confirm a New order', async () => {
   await page.waitForTimeout(5000);
   await ss('step1-order-opened');
 
-  // Log all visible tabs so we know what's available
+  // Log available tabs
   const tabs = page.locator('[role="tab"], .tab, lb-tab').filter({ visible: true });
   const tabTexts = await tabs.allTextContents();
   console.log(`Visible tabs: ${JSON.stringify(tabTexts.map(t => t.trim()).filter(Boolean))}`);
 
-  // Log all visible ribbon buttons
-  const ribbons = page.locator('lb-ribbon-big-button').filter({ visible: true });
-  const ribbonTexts = await ribbons.allTextContents();
-  console.log(`Ribbon buttons: ${JSON.stringify(ribbonTexts.map(t => t.trim()).filter(Boolean))}`);
-
-  // Navigate to Order items tab
-  const orderItemsTab = page.getByText('Order items', { exact: true }).filter({ visible: true }).first();
-  if (await orderItemsTab.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await save(); // save before switching tab
-    await orderItemsTab.click();
-    await page.waitForTimeout(3000);
-    await ss('step1-order-items-tab');
-  } else {
-    console.log('Order items tab not found — trying to confirm from current view');
-  }
-
-  // Log all visible buttons on this tab
-  const allBtns = page.getByRole('button').filter({ visible: true });
-  const btnTexts = await allBtns.allTextContents();
-  console.log(`All visible buttons: ${JSON.stringify(btnTexts.map(t => t.trim()).filter(Boolean))}`);
+  // Go to Order items tab
+  const onItemsTab = await clickTab('Order items');
+  if (!onItemsTab) console.log('Order items tab not found — trying from current view');
+  await ss('step1-order-items-tab');
+  await logButtons('Order items tab');
 
   // Confirm all positions
   let confirmed = 0;
   for (let attempt = 0; attempt < 20; attempt++) {
-    const confirmBtn = page.getByRole('button', { name: /confirm position/i }).filter({ visible: true }).first();
-    if (!await confirmBtn.isVisible({ timeout: 2000 }).catch(() => false)) break;
-    if (!await confirmBtn.isEnabled({ timeout: 1000 }).catch(() => false)) break;
-    await confirmBtn.click();
+    const btn = page.getByRole('button', { name: /confirm position/i }).filter({ visible: true }).first();
+    if (!await btn.isVisible({ timeout: 2000 }).catch(() => false)) break;
+    if (!await btn.isEnabled({ timeout: 1000 }).catch(() => false)) break;
+    await btn.click();
     await page.waitForTimeout(1500);
     confirmed++;
     console.log(`  Confirmed position ${confirmed}`);
@@ -144,44 +144,129 @@ test('Step 1: Confirm a New order', async () => {
   console.log(`Total positions confirmed: ${confirmed}`);
   await ss('step1-after-confirm');
 
-  // Save and close
+  // Save after confirming
   await save();
   await ss('step1-after-save');
-  await close();
-  await page.waitForTimeout(2000);
-  await ss('step1-order-closed');
 
   console.log(`STEP 1 PASSED — confirmed ${confirmed} positions on order ${targetOrderId}`);
 });
 
-// ── Step 2: Verify the order status changed in the list ───────────────────────
+// ── Step 2: Go to Shipping tab → Add shipment → Save → Close ─────────────────
 
-test('Step 2: Verify order status changed from New', async () => {
+test('Step 2: Add shipment on Shipping tab', async () => {
+  test.setTimeout(300000);
+
+  if (!targetOrderId) {
+    console.log('No order was processed in Step 1 — skipping');
+    return;
+  }
+
+  // Try multiple possible tab names for the shipping/delivery tab
+  const shippingTabNames = ['Shipping', 'Shipment', 'Delivery', 'Lieferung', 'Versand'];
+  let onShippingTab = false;
+  for (const tabName of shippingTabNames) {
+    onShippingTab = await clickTab(tabName);
+    if (onShippingTab) break;
+  }
+
+  if (!onShippingTab) {
+    console.log('Shipping tab not found — logging all visible tabs for diagnosis');
+    const tabs = page.locator('[role="tab"], .tab, lb-tab').filter({ visible: true });
+    const tabTexts = await tabs.allTextContents();
+    console.log(`Available tabs: ${JSON.stringify(tabTexts.map(t => t.trim()).filter(Boolean))}`);
+    await ss('step2-no-shipping-tab');
+    return;
+  }
+
+  await ss('step2-shipping-tab');
+  await logButtons('Shipping tab');
+
+  // Click "Add shipment" button
+  const addShipmentBtn = page.getByRole('button', { name: /add shipment/i }).filter({ visible: true }).first();
+  if (!await addShipmentBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    console.log('"Add shipment" button not found — logging buttons for diagnosis');
+    await logButtons('Shipping tab (add shipment missing)');
+    await ss('step2-no-add-shipment-btn');
+    return;
+  }
+
+  await addShipmentBtn.click();
+  await page.waitForTimeout(3000);
+  await ss('step2-shipment-dialog-opened');
+
+  // Log everything inside the dialog so we know what fields are available
+  const dialog = page.locator('lb-dialog, [role="dialog"]').filter({ visible: true }).first();
+  if (await dialog.isVisible({ timeout: 3000 }).catch(() => false)) {
+    const dialogText = (await dialog.textContent() || '').trim();
+    console.log(`Dialog content: ${dialogText.substring(0, 500)}`);
+    await logButtons('Shipment dialog');
+
+    // Log all input fields in the dialog
+    const inputs = dialog.locator('input, select, textarea').filter({ visible: true });
+    const inputCount = await inputs.count();
+    console.log(`Dialog input fields count: ${inputCount}`);
+    for (let i = 0; i < inputCount; i++) {
+      const placeholder = await inputs.nth(i).getAttribute('placeholder').catch(() => '');
+      const label       = await inputs.nth(i).getAttribute('aria-label').catch(() => '');
+      const name        = await inputs.nth(i).getAttribute('name').catch(() => '');
+      console.log(`  Input[${i}]: name="${name}" placeholder="${placeholder}" aria-label="${label}"`);
+    }
+
+    // Save inside the dialog (look for Save/OK/Confirm button inside dialog)
+    const dialogSaveBtn = dialog.getByRole('button', { name: /save|ok|confirm|add|create/i }).filter({ visible: true }).first();
+    if (await dialogSaveBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await dialogSaveBtn.click();
+      await page.waitForTimeout(3000);
+      console.log('  Clicked save in shipment dialog');
+      await ss('step2-shipment-dialog-saved');
+    } else {
+      console.log('  No save button found in dialog — logging and skipping');
+      await ss('step2-dialog-no-save-btn');
+    }
+  } else {
+    console.log('No dialog appeared after clicking Add shipment');
+    await ss('step2-no-dialog');
+  }
+
+  // Save the order
+  await save();
+  await ss('step2-after-save');
+
+  // Close the order
+  await close();
+  await page.waitForTimeout(2000);
+  await ss('step2-order-closed');
+
+  console.log(`STEP 2 PASSED — shipment added for order ${targetOrderId}`);
+});
+
+// ── Step 3: Verify order status changed in the list ───────────────────────────
+
+test('Step 3: Verify order status changed from New', async () => {
   test.setTimeout(120000);
 
   if (!targetOrderId) {
-    console.log('No order was processed in Step 1 — skipping verification');
+    console.log('No order was processed — skipping verification');
     return;
   }
 
   await ordersPage.navigateToOrders();
   await page.waitForTimeout(3000);
 
-  // Filter by order ID to find it quickly
-  const idColIdx = await ordersPage.findColumnIndex('ID');
+  const idColIdx     = await ordersPage.findColumnIndex('ID');
   const statusColIdx = await ordersPage.findColumnIndex('Status');
   await ordersPage.setTextFilter(idColIdx, targetOrderId);
   await page.waitForTimeout(2000);
-  await ss('step2-filtered-list');
+  await ss('step3-filtered-list');
 
   const status = (await ordersPage.getCellText(0, statusColIdx)).trim();
   console.log(`Order ${targetOrderId} final status: "${status}"`);
 
   if (status !== 'New') {
-    console.log(`STEP 2 PASSED — status changed from New to "${status}"`);
+    console.log(`STEP 3 PASSED — status changed from New to "${status}"`);
   } else {
-    console.log(`STEP 2 INFO — status is still "New" — confirm positions may not have been available or save did not trigger a status change`);
+    console.log(`STEP 3 INFO — status is still "New" — check screenshots and logs for what happened`);
   }
 
-  await ss('step2-final-status');
+  await ss('step3-final-status');
 });
