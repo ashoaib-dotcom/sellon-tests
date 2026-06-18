@@ -39,6 +39,7 @@ export class SftpHelper {
   }
 
   async connect(): Promise<void> {
+    if (this.connected) return;
     if (!this.isConfigured) {
       console.log('[SFTP] Not configured — skipping connect');
       return;
