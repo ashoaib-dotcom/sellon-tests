@@ -1,6 +1,7 @@
 import { test, chromium, Page, Browser, type Locator } from '@playwright/test';
 import { LoginPage } from '../pages/login.page';
 import { OrdersPage } from '../pages/orders.page';
+import { ORDER_STATUS, COLUMN, TAB, CANCEL_PATTERNS, CONFIRM_PATTERNS } from '../helpers/selectors';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -175,8 +176,8 @@ test('Step 1: Find single-item order and confirm positions', async () => {
   await page.waitForTimeout(3000);
   await ss('step1-orders-list');
 
-  const idColIdx     = await ordersPage.findColumnIndex('ID');
-  const statusColIdx = await ordersPage.findColumnIndex('Status');
+  const idColIdx     = await ordersPage.findColumnIndex(COLUMN.ID);
+  const statusColIdx = await ordersPage.findColumnIndex(COLUMN.STATUS);
   const rows         = page.locator('tbody tr');
   const rowCount     = await rows.count();
   console.log(`Total rows: ${rowCount}`);
@@ -191,9 +192,8 @@ test('Step 1: Find single-item order and confirm positions', async () => {
     const status = (await ordersPage.getCellText(i, statusColIdx)).trim();
     if (!id) continue;
     console.log(`  Row ${i}: ID="${id}" Status="${status}"`);
-    if (status === 'New')       { newOrders.push(id);       allShipped = false; }
-    else if (status === 'Confirmed') { confirmedOrders.push(id); allShipped = false; }
-    // Shipped → silently ignored
+    if (status === ORDER_STATUS.NEW)            { newOrders.push(id);       allShipped = false; }
+    else if (status === ORDER_STATUS.CONFIRMED) { confirmedOrders.push(id); allShipped = false; }
   }
 
   if (allShipped || (newOrders.length === 0 && confirmedOrders.length === 0)) {
@@ -218,7 +218,7 @@ test('Step 1: Find single-item order and confirm positions', async () => {
     await ss(`step1-${orderId}-opened`);
 
     // Switch to Order items tab WITHOUT saving (inspection only)
-    const onItems = await switchTab('Order items');
+    const onItems = await switchTab(TAB.ORDER_ITEMS);
     if (!onItems) {
       console.log(`  Order items tab not found for ${orderId}`);
       await close();
@@ -241,7 +241,7 @@ test('Step 1: Find single-item order and confirm positions', async () => {
 
     // Found a single-item order — record it
     targetOrderId     = orderId;
-    targetOrderStatus = newOrders.includes(orderId) ? 'New' : 'Confirmed';
+    targetOrderStatus = newOrders.includes(orderId) ? ORDER_STATUS.NEW : ORDER_STATUS.CONFIRMED;
     console.log(`  Selected order ${orderId} (${targetOrderStatus}) — 1 item`);
     await ss(`step1-${orderId}-selected`);
     break;
@@ -253,9 +253,9 @@ test('Step 1: Find single-item order and confirm positions', async () => {
   }
 
   // If New: go to Order items tab and confirm the position
-  if (targetOrderStatus === 'New') {
+  if (targetOrderStatus === ORDER_STATUS.NEW) {
     // Use clickTab (saves first), then confirm positions
-    await clickTab('Order items');
+    await clickTab(TAB.ORDER_ITEMS);
     await ss(`step1-${targetOrderId}-items-tab`);
 
     let confirmed = 0;
@@ -290,7 +290,7 @@ test('Step 2: Add shipment on Shipping tab', async () => {
   await ss('step2-start');
 
   // Go to Shipping tab (order is still open from Step 1)
-  const shippingTabNames = ['Shipping', 'Shipment', 'Delivery', 'Lieferung', 'Versand'];
+  const shippingTabNames = TAB.SHIPPING_OPTIONS;
   let onShippingTab = false;
   for (const tabName of shippingTabNames) {
     onShippingTab = await clickTab(tabName);
@@ -412,8 +412,8 @@ test('Step 3: Verify order status', async () => {
   await ordersPage.navigateToOrders();
   await page.waitForTimeout(3000);
 
-  const idColIdx     = await ordersPage.findColumnIndex('ID');
-  const statusColIdx = await ordersPage.findColumnIndex('Status');
+  const idColIdx     = await ordersPage.findColumnIndex(COLUMN.ID);
+  const statusColIdx = await ordersPage.findColumnIndex(COLUMN.STATUS);
   await ordersPage.setTextFilter(idColIdx, targetOrderId);
   await page.waitForTimeout(1500);
 
@@ -432,8 +432,8 @@ test('Step 4 (Positive): Confirm a New order — positions confirmed and status 
   await ordersPage.navigateToOrders();
   await page.waitForTimeout(3000);
 
-  const idColIdx     = await ordersPage.findColumnIndex('ID');
-  const statusColIdx = await ordersPage.findColumnIndex('Status');
+  const idColIdx     = await ordersPage.findColumnIndex(COLUMN.ID);
+  const statusColIdx = await ordersPage.findColumnIndex(COLUMN.STATUS);
   const rows         = page.locator('tbody tr');
   const rowCount     = await rows.count();
 
@@ -441,7 +441,7 @@ test('Step 4 (Positive): Confirm a New order — positions confirmed and status 
   for (let i = 0; i < rowCount; i++) {
     const id     = (await ordersPage.getCellText(i, idColIdx)).trim();
     const status = (await ordersPage.getCellText(i, statusColIdx)).trim();
-    if (id && status === 'New') { confirmOrderId = id; break; }
+    if (id && status === ORDER_STATUS.NEW) { confirmOrderId = id; break; }
   }
 
   if (!confirmOrderId) {
@@ -456,7 +456,7 @@ test('Step 4 (Positive): Confirm a New order — positions confirmed and status 
   await page.waitForTimeout(4000);
   await ss('step4-opened');
 
-  const onItems = await switchTab('Order items');
+  const onItems = await switchTab(TAB.ORDER_ITEMS);
   if (!onItems) {
     console.log('Step 4: Order items tab not found — skipping');
     await close();
@@ -498,9 +498,9 @@ test('Step 5 (Positive): Filter orders by status — only matching rows shown', 
   await page.waitForTimeout(3000);
   await ss('step5-start');
 
-  const statusColIdx = await ordersPage.findColumnIndex('Status');
+  const statusColIdx = await ordersPage.findColumnIndex(COLUMN.STATUS);
 
-  for (const filterStatus of ['New', 'Confirmed']) {
+  for (const filterStatus of [ORDER_STATUS.NEW, ORDER_STATUS.CONFIRMED]) {
     await ordersPage.setDropdownFilter(statusColIdx, filterStatus);
     await page.waitForTimeout(2000);
     await ss(`step5-filter-${filterStatus.toLowerCase()}`);
@@ -539,8 +539,8 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
   await ordersPage.navigateToOrders();
   await page.waitForTimeout(3000);
 
-  const idColIdx     = await ordersPage.findColumnIndex('ID');
-  const statusColIdx = await ordersPage.findColumnIndex('Status');
+  const idColIdx     = await ordersPage.findColumnIndex(COLUMN.ID);
+  const statusColIdx = await ordersPage.findColumnIndex(COLUMN.STATUS);
   const rows         = page.locator('tbody tr');
   const rowCount     = await rows.count();
 
@@ -549,7 +549,7 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
     const id     = (await ordersPage.getCellText(i, idColIdx)).trim();
     const status = (await ordersPage.getCellText(i, statusColIdx)).trim();
     // Skip the order already processed by earlier steps
-    if (id && status === 'New' && id !== targetOrderId) { cancelOrderId = id; break; }
+    if (id && status === ORDER_STATUS.NEW && id !== targetOrderId) { cancelOrderId = id; break; }
   }
 
   if (!cancelOrderId) {
@@ -565,13 +565,8 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
   await ss('step6-opened');
 
   // Look for cancel / reject button in ribbon or toolbar
-  const cancelPatterns = [
-    /cancel order/i, /reject order/i, /stornieren/i, /ablehnen/i,
-    /cancel/i, /reject/i,
-  ];
-
   let cancelClicked = false;
-  for (const pattern of cancelPatterns) {
+  for (const pattern of CANCEL_PATTERNS) {
     const ribbonBtn = page.locator('lb-ribbon-big-button').filter({ hasText: pattern }).filter({ visible: true }).first();
     if (await ribbonBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await ribbonBtn.click();
@@ -600,7 +595,7 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
   }
 
   // Confirm any "are you sure?" dialog
-  for (const confirmPattern of [/yes/i, /confirm/i, /ok/i, /ja/i, /bestätigen/i]) {
+  for (const confirmPattern of CONFIRM_PATTERNS) {
     const confirmBtn = page.getByRole('button', { name: confirmPattern }).filter({ visible: true }).first();
     if (await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await confirmBtn.click();
@@ -634,8 +629,8 @@ test('Step 7 (Negative): Create shipment with missing required fields is blocked
   await ordersPage.navigateToOrders();
   await page.waitForTimeout(3000);
 
-  const statusColIdx = await ordersPage.findColumnIndex('Status');
-  const idColIdx     = await ordersPage.findColumnIndex('ID');
+  const statusColIdx = await ordersPage.findColumnIndex(COLUMN.STATUS);
+  const idColIdx     = await ordersPage.findColumnIndex(COLUMN.ID);
   const rows         = page.locator('tbody tr');
   const rowCount     = await rows.count();
 
@@ -644,7 +639,7 @@ test('Step 7 (Negative): Create shipment with missing required fields is blocked
   for (let i = 0; i < rowCount; i++) {
     const id     = (await ordersPage.getCellText(i, idColIdx)).trim();
     const status = (await ordersPage.getCellText(i, statusColIdx)).trim();
-    if (id && status === 'Confirmed') { confirmedId = id; break; }
+    if (id && status === ORDER_STATUS.CONFIRMED) { confirmedId = id; break; }
   }
 
   if (!confirmedId) {
@@ -659,7 +654,7 @@ test('Step 7 (Negative): Create shipment with missing required fields is blocked
   await page.waitForTimeout(4000);
 
   // Navigate to Shipping tab
-  const shippingTabNames = ['Shipping', 'Shipment', 'Delivery', 'Lieferung', 'Versand'];
+  const shippingTabNames = TAB.SHIPPING_OPTIONS;
   let onShippingTab = false;
   for (const tabName of shippingTabNames) {
     onShippingTab = await switchTab(tabName);
@@ -716,7 +711,7 @@ test('Step 8 (Negative): Search for non-existent order ID returns empty result',
   await ordersPage.navigateToOrders();
   await page.waitForTimeout(3000);
 
-  const idColIdx = await ordersPage.findColumnIndex('ID');
+  const idColIdx = await ordersPage.findColumnIndex(COLUMN.ID);
   const bogusId  = 'XXXXXXXXXX999';
 
   await ordersPage.setTextFilter(idColIdx, bogusId);

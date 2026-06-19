@@ -1,5 +1,8 @@
 import { Page, expect } from '@playwright/test';
 import { BasePage } from './base.page';
+import { RIBBON, ORDER_STATUS, COLUMN, DIALOG } from '../helpers/selectors';
+
+export { RIBBON, ORDER_STATUS, COLUMN, DIALOG };
 
 export class OrdersPage extends BasePage {
   constructor(page: Page) {
@@ -165,5 +168,48 @@ export class OrdersPage extends BasePage {
   async getCellText(rowIndex: number, colIndex: number): Promise<string> {
     const cell = this.page.locator('tbody tr').nth(rowIndex).locator('td').nth(colIndex);
     return (await cell.innerText({ timeout: 5000 }).catch(() => '')).trim();
+  }
+
+  // ── Ribbon button locators ─────────────────────────────────────────────────
+  editBtn    = () => this.page.getByText(RIBBON.EDIT,    { exact: true }).filter({ visible: true }).first();
+  cancelBtn  = () => this.page.getByText(RIBBON.CANCEL,  { exact: true }).filter({ visible: true }).first();
+  exportBtn  = () => this.page.getByText(RIBBON.EXPORT,  { exact: true }).filter({ visible: true }).first();
+  refreshBtn = () => this.page.getByText(RIBBON.REFRESH, { exact: true }).filter({ visible: true }).first();
+  clearBtn   = () => this.page.getByText(RIBBON.CLEAR,   { exact: true }).filter({ visible: true }).first();
+  searchBtn  = () => this.page.getByText(RIBBON.SEARCH,  { exact: true }).filter({ visible: true }).first();
+
+  // ── Ribbon visibility checks ───────────────────────────────────────────────
+  async ribbonButtonsVisible(): Promise<Record<string, boolean>> {
+    return {
+      [RIBBON.EDIT]:    await this.editBtn().isVisible({ timeout: 2000 }).catch(() => false),
+      [RIBBON.CANCEL]:  await this.cancelBtn().isVisible({ timeout: 2000 }).catch(() => false),
+      [RIBBON.EXPORT]:  await this.exportBtn().isVisible({ timeout: 2000 }).catch(() => false),
+      [RIBBON.REFRESH]: await this.refreshBtn().isVisible({ timeout: 2000 }).catch(() => false),
+    };
+  }
+
+  // ── Status helpers ─────────────────────────────────────────────────────────
+  async getOrderStatus(rowIndex = 0): Promise<string> {
+    const statusColIdx = await this.findColumnIndex(COLUMN.STATUS);
+    return this.getCellText(rowIndex, statusColIdx);
+  }
+
+  async findOrdersByStatus(status: string): Promise<string[]> {
+    const idColIdx     = await this.findColumnIndex(COLUMN.ID);
+    const statusColIdx = await this.findColumnIndex(COLUMN.STATUS);
+    const rowCount     = await this.page.locator('tbody tr').count();
+    const ids: string[] = [];
+    for (let i = 0; i < rowCount; i++) {
+      const id  = (await this.getCellText(i, idColIdx)).trim();
+      const st  = (await this.getCellText(i, statusColIdx)).trim();
+      if (id && st === status) ids.push(id);
+    }
+    return ids;
+  }
+
+  // ── Export ─────────────────────────────────────────────────────────────────
+  async clickExport() {
+    await this.exportBtn().click();
+    await this.page.waitForTimeout(3000);
   }
 }

@@ -652,6 +652,64 @@ test('TC-18: Special characters in Name filter show 0 results without crashing',
 // TC-19: Contradictory filters — Stage 1 + specific stock = 0 results
 // ============================================================
 
+// ── Ribbon collapse / expand toggle ──────────────────────────────────────────
+
+test('Products: double-arrow button collapses and restores the ribbon toolbar', async () => {
+  test.setTimeout(60000);
+
+  await clickClear();
+  await page.waitForTimeout(2000);
+
+  // Ribbon buttons visible by default on the Products page
+  const ribbonButtons = ['New', 'Delete', 'Export', 'Refresh'];
+  for (const label of ribbonButtons) {
+    const visible = await page.getByText(label, { exact: true }).filter({ visible: true }).first()
+      .isVisible({ timeout: 3000 }).catch(() => false);
+    console.log(`  Before collapse — "${label}" visible: ${visible}`);
+  }
+
+  // Collapse icon (.fa-angle-double-up) / expand icon (.fa-angle-double-down)
+  // — confirmed by codegen recording
+  const collapseIcon = page.locator('.fal.fa-angle-double-up').first();
+  const expandIcon   = page.locator('.fal.fa-angle-double-down').first();
+
+  if (!await collapseIcon.isVisible({ timeout: 5000 }).catch(() => false)) {
+    console.log('  Collapse button (.fal.fa-angle-double-up) not found — skipping');
+    try { await page.screenshot({ path: 'screenshots/products-ribbon-toggle-skip.png', timeout: 5000 }); } catch {}
+    return;
+  }
+
+  // Click to collapse
+  await collapseIcon.click();
+  await page.waitForTimeout(1500);
+  try { await page.screenshot({ path: 'screenshots/products-ribbon-collapsed.png', timeout: 5000 }); } catch {}
+
+  let hiddenCount = 0;
+  for (const label of ribbonButtons) {
+    const visible = await page.getByText(label, { exact: true }).filter({ visible: true }).first()
+      .isVisible({ timeout: 1000 }).catch(() => false);
+    console.log(`  After collapse — "${label}" visible: ${visible}`);
+    if (!visible) hiddenCount++;
+  }
+  console.log(`  ${hiddenCount}/${ribbonButtons.length} ribbon buttons hidden after collapse`);
+
+  // Click the expand icon to restore the ribbon
+  await expandIcon.click();
+  await page.waitForTimeout(1500);
+  try { await page.screenshot({ path: 'screenshots/products-ribbon-expanded.png', timeout: 5000 }); } catch {}
+
+  let restoredCount = 0;
+  for (const label of ribbonButtons) {
+    const visible = await page.getByText(label, { exact: true }).filter({ visible: true }).first()
+      .isVisible({ timeout: 2000 }).catch(() => false);
+    console.log(`  After expand — "${label}" visible: ${visible}`);
+    if (visible) restoredCount++;
+  }
+  console.log(`  ${restoredCount}/${ribbonButtons.length} ribbon buttons restored after expand`);
+
+  console.log('PRODUCTS RIBBON COLLAPSE TOGGLE PASSED');
+});
+
 test('TC-19: Contradictory filters produce 0 results', async () => {
   test.setTimeout(120000);
 

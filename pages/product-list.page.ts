@@ -1,25 +1,46 @@
 import { Page, expect } from '@playwright/test';
+import { RIBBON, PRODUCT_STATE, COLUMN, DIALOG } from '../helpers/selectors';
+
+export { RIBBON, PRODUCT_STATE, COLUMN, DIALOG };
 
 export class ProductListPage {
   constructor(private page: Page) {}
 
+  // ── Ribbon button locators ─────────────────────────────────────────────────
+  newBtn    = () => this.page.getByText(RIBBON.NEW,    { exact: true }).filter({ visible: true }).first();
+  deleteBtn = () => this.page.getByText(RIBBON.DELETE, { exact: true }).filter({ visible: true }).first();
+  exportBtn = () => this.page.getByText(RIBBON.EXPORT, { exact: true }).filter({ visible: true }).first();
+  refreshBtn= () => this.page.getByText(RIBBON.REFRESH,{ exact: true }).filter({ visible: true }).first();
+  importBtn = () => this.page.getByText(RIBBON.IMPORT, { exact: true }).filter({ visible: true }).first();
+  clearBtn  = () => this.page.getByText(RIBBON.CLEAR,  { exact: true }).filter({ visible: true }).first();
+  searchBtn = () => this.page.getByText(RIBBON.SEARCH, { exact: true }).filter({ visible: true }).first();
+
+  async ribbonButtonsVisible(): Promise<Record<string, boolean>> {
+    return {
+      [RIBBON.NEW]:    await this.newBtn().isVisible({ timeout: 2000 }).catch(() => false),
+      [RIBBON.DELETE]: await this.deleteBtn().isVisible({ timeout: 2000 }).catch(() => false),
+      [RIBBON.EXPORT]: await this.exportBtn().isVisible({ timeout: 2000 }).catch(() => false),
+      [RIBBON.REFRESH]:await this.refreshBtn().isVisible({ timeout: 2000 }).catch(() => false),
+    };
+  }
+
   async clickNew() {
-    await this.page.getByText('New', { exact: true }).dispatchEvent('click');
+    await this.newBtn().dispatchEvent('click');
     await this.page.waitForTimeout(10000);
   }
 
   async clickImport() {
-    await this.page.getByText('Import', { exact: true }).click();
+    await this.importBtn().click();
     await this.page.waitForTimeout(10000);
   }
 
   async clickRefresh() {
-    await this.page.getByText('Refresh', { exact: true }).click();
+    await this.refreshBtn().click();
     await this.page.waitForTimeout(10000);
   }
 
   async clickClear() {
-    await this.page.getByText('Clear', { exact: true }).click();
+    await this.clearBtn().click();
     await this.page.waitForTimeout(3000);
   }
 
@@ -86,7 +107,7 @@ export class ProductListPage {
 
   // Click the Delete toolbar button
   async clickDelete() {
-    await this.page.getByText('Delete', { exact: true }).click();
+    await this.deleteBtn().click();
     await this.page.waitForTimeout(2000);
   }
 
@@ -107,7 +128,7 @@ export class ProductListPage {
   // Confirm a delete/confirmation dialog by clicking Yes/OK/Confirm
   async confirmDialog() {
     const confirmBtn = this.page
-      .getByRole('button', { name: /^(Yes|OK|Confirm|Delete)$/i })
+      .getByRole('button', { name: new RegExp(`^(${DIALOG.YES}|${DIALOG.OK}|${DIALOG.CONFIRM}|${DIALOG.DELETE})$`, 'i') })
       .first();
     await confirmBtn.waitFor({ state: 'visible', timeout: 10000 });
     await confirmBtn.click();
@@ -117,7 +138,7 @@ export class ProductListPage {
   // Dismiss a dialog (No / Cancel)
   async dismissDialog() {
     const cancelBtn = this.page
-      .getByRole('button', { name: /^(No|Cancel|Close)$/i })
+      .getByRole('button', { name: new RegExp(`^(${DIALOG.NO}|${DIALOG.CANCEL}|${DIALOG.CLOSE})$`, 'i') })
       .first();
     await cancelBtn.waitFor({ state: 'visible', timeout: 5000 });
     await cancelBtn.click();

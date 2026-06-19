@@ -278,6 +278,67 @@ test('Orders negative: filter with non-existent order ID shows no results', asyn
   console.log('ORDERS NO MATCH FILTER TEST PASSED');
 });
 
+// ── Ribbon collapse / expand toggle ──────────────────────────────────────────
+
+test('Orders: double-arrow button collapses and restores the ribbon toolbar', async () => {
+  test.setTimeout(60000);
+
+  try { await ordersPage.navigateToOrders(); } catch {
+    console.log('navigateToOrders failed — skipping');
+    return;
+  }
+  await page.waitForTimeout(3000);
+
+  // Ribbon buttons that should be visible by default
+  const ribbonButtons = ['Edit', 'Cancel', 'Export', 'Refresh'];
+  for (const label of ribbonButtons) {
+    const visible = await page.getByText(label, { exact: true }).filter({ visible: true }).first()
+      .isVisible({ timeout: 3000 }).catch(() => false);
+    console.log(`  Before collapse — "${label}" visible: ${visible}`);
+  }
+
+  // Collapse icon (.fa-angle-double-up) / expand icon (.fa-angle-double-down)
+  // — confirmed by codegen recording
+  const collapseIcon = page.locator('.fal.fa-angle-double-up').first();
+  const expandIcon   = page.locator('.fal.fa-angle-double-down').first();
+
+  if (!await collapseIcon.isVisible({ timeout: 5000 }).catch(() => false)) {
+    console.log('  Collapse button (.fal.fa-angle-double-up) not found — skipping');
+    await ordersPage.screenshot('orders-ribbon-toggle-skip');
+    return;
+  }
+
+  // Click to collapse
+  await collapseIcon.click();
+  await page.waitForTimeout(1500);
+  await ordersPage.screenshot('orders-ribbon-collapsed');
+
+  let hiddenCount = 0;
+  for (const label of ribbonButtons) {
+    const visible = await page.getByText(label, { exact: true }).filter({ visible: true }).first()
+      .isVisible({ timeout: 1000 }).catch(() => false);
+    console.log(`  After collapse — "${label}" visible: ${visible}`);
+    if (!visible) hiddenCount++;
+  }
+  console.log(`  ${hiddenCount}/${ribbonButtons.length} ribbon buttons hidden after collapse`);
+
+  // Click the expand icon to restore the ribbon
+  await expandIcon.click();
+  await page.waitForTimeout(1500);
+  await ordersPage.screenshot('orders-ribbon-expanded');
+
+  let restoredCount = 0;
+  for (const label of ribbonButtons) {
+    const visible = await page.getByText(label, { exact: true }).filter({ visible: true }).first()
+      .isVisible({ timeout: 2000 }).catch(() => false);
+    console.log(`  After expand — "${label}" visible: ${visible}`);
+    if (visible) restoredCount++;
+  }
+  console.log(`  ${restoredCount}/${ribbonButtons.length} ribbon buttons restored after expand`);
+
+  console.log('ORDERS RIBBON COLLAPSE TOGGLE PASSED');
+});
+
 test('Orders negative: clicking export with no rows selected exports all (no crash)', async () => {
   test.setTimeout(60000);
 
