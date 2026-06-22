@@ -24,7 +24,7 @@ export default defineConfig({
       ],
     },
     screenshot: 'only-on-failure',
-    video: 'on',
+    video: (process.env.RECORD_VIDEO === 'true' ? 'on' : 'off') as 'on' | 'off',
   },
   projects: [
     {
