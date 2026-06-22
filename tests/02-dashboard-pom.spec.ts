@@ -27,11 +27,11 @@ test.beforeAll(async ({ browser }) => {
   console.log('⏳ Waiting for dashboard content...');
 
   // Wait for menu icon to confirm app shell is ready
-  await page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 90000 })
+  await page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 30000 })
     .catch(() => console.log('⚠️ menu-icon not visible'));
 
   // Wait for blocking modal to dismiss
-  await page.locator('lb-modal-blocking').waitFor({ state: 'hidden', timeout: 30000 })
+  await page.locator('lb-modal-blocking').waitFor({ state: 'hidden', timeout: 10000 })
     .catch(() => console.log('⚠️ No blocking modal'));
 
   // Wait for Angular to render dashboard content
@@ -436,7 +436,7 @@ test('Products: TV icon changes layout — vertical and quarter options work', a
   await page.screenshot({ path: 'screenshots/prod-layout-01-menu-opened.png', fullPage: true }).catch(() => {});
   console.log('Sidebar opened');
 
-  await page.getByText('Product', { exact: true }).click();
+  await page.getByText('Product', { exact: true }).first().click();
   await page.waitForTimeout(1000);
   const productLinks = page.getByText('Product');
   const linkCount = await productLinks.count();
