@@ -900,8 +900,9 @@ Position: To confirm → Confirmed → Shipped → Returned
 | `orders` | 12-orders-pom.spec.ts | |
 | `orders-filters` | 13-orders-filters-pom.spec.ts | |
 | `product-delete` | 16-product-delete-pom.spec.ts | |
-
-> **Note:** Tests 14 (split-shipment), 15 (profile), and 17 (admin-cleanup) are not yet wired up in `.gitlab-ci.yml`. Add them using the `.test-template` extends pattern.
+| `split-shipment` | 14-split-shipment-pom.spec.ts | |
+| `profile` | 15-profile-pom.spec.ts | |
+| `admin-cleanup` | 17-admin-cleanup-pom.spec.ts | timeout: 15 minutes |
 
 ---
 

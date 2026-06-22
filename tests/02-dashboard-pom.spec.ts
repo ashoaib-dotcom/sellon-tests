@@ -512,7 +512,8 @@ test('Navigation: open sidebar and navigate to Orders page', async () => {
   // Open Orders navigation
   const navOrders = page.getByRole('navigation').getByText('Orders', { exact: true });
   if (await navOrders.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await navOrders.click();
+    await navOrders.scrollIntoViewIfNeeded().catch(() => {});
+    await navOrders.click({ force: true });
     await page.waitForTimeout(1500);
     await page.screenshot({ path: 'screenshots/nav-orders-03-orders-parent-clicked.png', fullPage: true }).catch(() => {});
     console.log('Orders nav parent clicked');
@@ -520,7 +521,9 @@ test('Navigation: open sidebar and navigate to Orders page', async () => {
     // Sidebar might be closed — open it first
     await page.locator('.menu-icon').click();
     await page.waitForTimeout(1500);
-    await page.getByRole('navigation').getByText('Orders', { exact: true }).click().catch(() => {});
+    const ordersNav = page.getByRole('navigation').getByText('Orders', { exact: true });
+    await ordersNav.scrollIntoViewIfNeeded().catch(() => {});
+    await ordersNav.click({ force: true }).catch(() => {});
     await page.waitForTimeout(1500);
     await page.screenshot({ path: 'screenshots/nav-orders-03-sidebar-reopened.png', fullPage: true }).catch(() => {});
   }

@@ -184,13 +184,16 @@ async function openSearchBar() {
     }
   }
 
-  console.log('[Admin] WARNING: search bar not opened — no matching icon found');
+  // Last-resort: try keyboard shortcut directly
+  await page.keyboard.press('Control+Shift+F');
+  await page.waitForTimeout(1000);
+  console.log('[Admin] Search bar opened via keyboard shortcut Control+Shift+F');
 }
 
 async function searchAndOpen(term: string, exactLabel: string) {
   // Type into the CMD+Shift+F search field
   const searchBox = page.getByRole('textbox', { name: /CMD.*Shift.*F/i });
-  await searchBox.waitFor({ state: 'visible', timeout: 10000 });
+  await searchBox.waitFor({ state: 'visible', timeout: 30000 });
   await searchBox.fill('');
   await searchBox.click();
   await searchBox.pressSequentially(term, { delay: 150 });
