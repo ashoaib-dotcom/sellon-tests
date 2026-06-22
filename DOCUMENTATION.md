@@ -1,10 +1,11 @@
-# Sellon Automation Test Suite — Complete Documentation
+# sellon-tests — Complete Project Documentation
 
 **Project:** `sellon-tests`
-**Target Application:** [stage.sellon.ch](https://stage.sellon.ch/) (Sellon Supplier Portal — Staging)
+**Target:** [stage.sellon.ch](https://stage.sellon.ch/) — Sellon Supplier Portal (Staging)
+**Admin Panel:** `https://stage.sellon.ch/` (Lobster UI, separate credentials)
 **Framework:** Playwright v1.60.0 (TypeScript)
 **Pattern:** Page Object Model (POM)
-**CI/CD:** GitHub Actions — runs on every push to `main`, every PR, and daily at 06:00 UTC
+**CI/CD:** GitLab CI — runs on every push to `main`, manual trigger, and scheduled pipelines
 
 ---
 
@@ -13,52 +14,40 @@
 1. [Project Overview](#1-project-overview)
 2. [Technology Stack](#2-technology-stack)
 3. [Project Structure](#3-project-structure)
-4. [Environment Variables & Configuration](#4-environment-variables--configuration)
+4. [Environment Variables](#4-environment-variables)
 5. [Running Tests Locally](#5-running-tests-locally)
-6. [CI/CD Pipeline](#6-cicd-pipeline)
-7. [Page Object Model (Pages)](#7-page-object-model-pages)
-8. [Helpers](#8-helpers)
-9. [Test Specifications — All 14 Suites](#9-test-specifications--all-14-suites)
-   - [1. login-pom](#91-login-pom)
-   - [2. dashboard-pom](#92-dashboard-pom)
-   - [3. product-create-pom](#93-product-create-pom)
-   - [4. product-edit-pom](#94-product-edit-pom)
-   - [5. product-delete-pom](#95-product-delete-pom)
-   - [6. product-filters-pom](#96-product-filters-pom)
-   - [7. product-validations-pom](#97-product-validations-pom)
-   - [8. product-import-pom](#98-product-import-pom)
-   - [9. stock-import-pom](#99-stock-import-pom)
-   - [10. export-pom](#910-export-pom)
-   - [11. orders-pom](#911-orders-pom)
-   - [12. orders-filters-pom](#912-orders-filters-pom)
-   - [13. order-workflow-pom](#913-order-workflow-pom)
-   - [14. sftp-upload-pom](#914-sftp-upload-pom)
-10. [Key Technical Decisions & Fixes](#10-key-technical-decisions--fixes)
-11. [EDI Message Reference](#11-edi-message-reference)
-12. [Seeding Test Orders](#12-seeding-test-orders)
+6. [Playwright Configuration](#6-playwright-configuration)
+7. [Page Object Model](#7-page-object-model)
+8. [Helpers & Utilities](#8-helpers--utilities)
+9. [Test Suites — All 17 Files](#9-test-suites--all-17-files)
+10. [EDI Message Reference](#10-edi-message-reference)
+11. [GitLab CI/CD Pipeline](#11-gitlab-cicd-pipeline)
+12. [Key Technical Notes](#12-key-technical-notes)
 
 ---
 
 ## 1. Project Overview
 
-This repository contains a complete end-to-end (E2E) automation test suite for the **Sellon Supplier Portal**, an Angular SPA used by suppliers to manage products, orders, exports, stock, and EDI-based communication with distribution partners (e.g. Galaxus/Digitec).
+End-to-end automation suite for the **Sellon Supplier Portal** — an Angular/Lobster SPA used by suppliers to manage products, orders, SFTP-based EDI communication, and Galaxus exports.
 
-### What is tested
+### Coverage by domain
 
-| Domain | Test Suites |
+| Domain | Test files |
 |---|---|
-| Authentication | login-pom |
-| Dashboard & KPIs | dashboard-pom |
-| Product lifecycle | product-create-pom, product-edit-pom, product-delete-pom |
-| Product discovery | product-filters-pom |
-| Product validation | product-validations-pom |
-| CSV imports | product-import-pom, stock-import-pom |
-| Galaxus export | export-pom |
-| Order management | orders-pom, orders-filters-pom |
-| Order workflow (EDI) | order-workflow-pom |
-| SFTP / EDI integration | sftp-upload-pom |
+| Authentication | 01-login |
+| Dashboard & KPIs | 02-dashboard |
+| Product create / edit / delete | 03, 04, 16 |
+| Product filters & validations | 05, 06 |
+| CSV / XLSX imports | 07-product-import, 08-stock-import |
+| Galaxus export | 09-export |
+| SFTP / EDI integration | 10-sftp-upload |
+| Order workflow (full EDI round-trip) | 11-order-workflow |
+| Order list & filters | 12-orders, 13-orders-filters |
+| Split shipment | 14-split-shipment |
+| Profile & user settings | 15-profile |
+| Admin cleanup (Lobster admin panel) | 17-admin-cleanup |
 
-**Total test cases:** ~175 across 14 spec files.
+**Total:** 17 test suites, 150+ test cases.
 
 ---
 
@@ -67,15 +56,17 @@ This repository contains a complete end-to-end (E2E) automation test suite for t
 | Layer | Technology |
 |---|---|
 | Test runner | Playwright Test v1.60.0 |
-| Language | TypeScript (strict) |
+| Language | TypeScript |
 | Browser | Chromium (headless) |
-| Pattern | Page Object Model (POM) |
+| Pattern | Page Object Model |
 | SFTP client | `ssh2-sftp-client` v12.x |
-| Env loading | `dotenv` |
-| Node.js | v24 (CI) |
-| CI | GitHub Actions (matrix strategy, 14 parallel jobs) |
+| Spreadsheet | `xlsx` v0.18.5 |
+| Env loading | `dotenv` v17.x |
+| Node.js | v20 (CI via nvm) |
+| CI/CD | GitLab CI — `debian:trixie` / `kasm_docker` runner |
 | Reporting | HTML report + List reporter |
-| Screenshots | On failure (CI) + manual `screenshots/` folder |
+| Video | `.webm` — toggled via `RECORD_VIDEO=true` |
+| Screenshots | On failure (always); manual `screenshots/` folder |
 
 ---
 
@@ -83,93 +74,106 @@ This repository contains a complete end-to-end (E2E) automation test suite for t
 
 ```
 sellon-tests/
-├── tests/                          # All 14 spec files
-│   ├── login-pom.spec.ts
-│   ├── dashboard-pom.spec.ts
-│   ├── product-create-pom.spec.ts
-│   ├── product-edit-pom.spec.ts
-│   ├── product-delete-pom.spec.ts
-│   ├── product-filters-pom.spec.ts
-│   ├── product-validations-pom.spec.ts
-│   ├── product-import-pom.spec.ts
-│   ├── stock-import-pom.spec.ts
-│   ├── export-pom.spec.ts
-│   ├── orders-pom.spec.ts
-│   ├── orders-filters-pom.spec.ts
-│   ├── order-workflow-pom.spec.ts
-│   ├── sftp-upload-pom.spec.ts
-│   ├── global-setup.ts             # Shared login (saves auth state)
-│   └── global-teardown.ts
-├── pages/                          # Page Object classes
+├── tests/                              # 17 spec files (numbered for execution order)
+│   ├── 01-login-pom.spec.ts
+│   ├── 02-dashboard-pom.spec.ts
+│   ├── 03-product-create-pom.spec.ts
+│   ├── 04-product-edit-pom.spec.ts
+│   ├── 05-product-filters-pom.spec.ts
+│   ├── 06-product-validations-pom.spec.ts
+│   ├── 07-product-import-pom.spec.ts
+│   ├── 08-stock-import-pom.spec.ts
+│   ├── 09-export-pom.spec.ts
+│   ├── 10-sftp-upload-pom.spec.ts
+│   ├── 11-order-workflow-pom.spec.ts
+│   ├── 12-orders-pom.spec.ts
+│   ├── 13-orders-filters-pom.spec.ts
+│   ├── 14-split-shipment-pom.spec.ts
+│   ├── 15-profile-pom.spec.ts
+│   ├── 16-product-delete-pom.spec.ts
+│   └── 17-admin-cleanup-pom.spec.ts
+│
+├── pages/                              # Page Object classes
 │   ├── base.page.ts
 │   ├── login.page.ts
-│   ├── navigation.page.ts
 │   ├── dashboard.page.ts
-│   ├── orders.page.ts
+│   ├── navigation.page.ts
 │   ├── product-list.page.ts
-│   └── product-form.page.ts
+│   ├── product-form.page.ts
+│   └── orders.page.ts
+│
 ├── helpers/
-│   ├── edi-builder.ts              # Builds EDI XML for all message types
-│   └── sftp-upload.ts              # SftpHelper class + singleton
-├── scripts/
-│   └── seed-orders.ts              # Seeds 3 test orders via GORDP SFTP upload
+│   ├── selectors.ts                    # Centralized UI label constants
+│   ├── edi-builder.ts                  # Builds / parses openTRANS 2.1 EDI XML
+│   └── sftp-upload.ts                  # SftpHelper class
+│
+├── fixtures/                           # 4 GORDP XML files (test orders)
+│   ├── GORDP_223344_36490.xml          → order 61830310
+│   ├── GORDP_223344_36491.xml          → order 61830311
+│   ├── GORDP_223344_36492.xml          → order 61830312
+│   └── GORDP_223344_38083.xml          → order 61830313
+│
 ├── test-data/
-│   └── *.csv                       # Sample CSV files for import tests
-├── screenshots/                    # Manual + failure screenshots
-├── playwright-report/              # HTML test reports
-├── playwright.config.ts            # Playwright global config
-├── .env                            # Local secrets (not committed)
-├── .github/
-│   └── workflows/
-│       └── playwright.yml          # CI/CD GitHub Actions workflow
+│   ├── import-products.csv / .xlsx
+│   └── stock-update.csv / .xlsx
+│
+├── scripts/                            # Utility / exploration scripts
+│   ├── download-gordp-files.mjs
+│   ├── seed-orders.ts
+│   └── ...
+│
+├── global-setup.ts                     # Runs before all tests (debug login page)
+├── global-teardown.ts                  # Cleans up auth-state.json
+├── playwright.config.ts
+├── .gitlab-ci.yml
+├── .env                                # Local secrets — NEVER commit
+├── tsconfig.json
 └── package.json
 ```
 
 ---
 
-## 4. Environment Variables & Configuration
+## 4. Environment Variables
 
-### `.env` (local only — never committed)
+All variables live in `.env` (gitignored). In GitLab CI, set them under **Settings → CI/CD → Variables** (masked + protected).
 
-```env
-# Application login
-TEST_USERNAME=ashoaib
-TEST_PASSWORD=test2
-BASE_URL=https://stage.sellon.ch/
+> **Warning: `.env` must never be committed.** It contains staging credentials.
 
-# SFTP — EDI exchange with the Sellon platform
-SFTP_HOST=microservices.mpe.wwip.dev
-SFTP_PORT=22
-SFTP_USERNAME=<supplier_sftp_user>
-SFTP_PASSWORD=<supplier_sftp_password>
-SFTP_SUPPLIER_ID=223344
+### Application
 
-# Supplier → Platform (upload EDI IN messages: GORDR, GDELR, GCANR, GSURN)
-SFTP_REMOTE_IN_DIR=/uploads/stage/OrderData/Test/partner2dg
+| Variable | Required | Description |
+|---|---|---|
+| `BASE_URL` | ✅ | Staging portal URL, e.g. `https://stage.sellon.ch/` |
+| `TEST_USERNAME` | ✅ | Supplier portal login username |
+| `TEST_PASSWORD` | ✅ | Supplier portal login password |
 
-# Platform → Supplier (read EDI OUT messages: GORDP, GCANP, GRETP)
-SFTP_REMOTE_OUT_DIR=/uploads/stage/OrderData/Test/dg2partner
-```
+### Admin Panel (test 17 only)
 
-### GitHub Actions Secrets (CI)
+| Variable | Required | Description |
+|---|---|---|
+| `ADMIN_USERNAME` | ✅ | Lobster admin panel username |
+| `ADMIN_PASSWORD` | ✅ | Lobster admin panel password |
+| `ADMIN_COMPANY_ID` | ✅ | Company ID for safety gate (351) |
+| `ADMIN_SUPPLIER_ID` | ✅ | Supplier ID for safety gate (223344) |
 
-All environment variables above are stored as repository secrets:
-`TEST_USERNAME`, `TEST_PASSWORD`, `BASE_URL`, `SFTP_HOST`, `SFTP_PORT`, `SFTP_USERNAME`, `SFTP_PASSWORD`, `SFTP_REMOTE_IN_DIR`, `SFTP_REMOTE_OUT_DIR`, `SFTP_SUPPLIER_ID`
+### SFTP / EDI (tests 10, 11)
 
-### `playwright.config.ts` key settings
+| Variable | Required | Description |
+|---|---|---|
+| `SFTP_HOST` | ✅ | SFTP server hostname |
+| `SFTP_PORT` | optional | Port, defaults to 22 |
+| `SFTP_USERNAME` | ✅ | SFTP login username |
+| `SFTP_PASSWORD` | optional | Password (or use `SFTP_PRIVATE_KEY`) |
+| `SFTP_PRIVATE_KEY` | optional | Path to private key file, or raw key content |
+| `SFTP_SUPPLIER_ID` | ✅ | Supplier ID embedded in filenames (223344) |
+| `SFTP_REMOTE_IN_DIR` | ✅ | Dir where supplier uploads EDI responses |
+| `SFTP_REMOTE_OUT_DIR` | ✅ | Dir where the platform writes GORDP files |
 
-| Setting | Value |
-|---|---|
-| `testDir` | `./tests` |
-| `timeout` | 300,000 ms (5 min per test) |
-| `expect.timeout` | 30,000 ms |
-| `baseURL` | `process.env.BASE_URL \|\| 'https://stage.sellon.ch/'` |
-| `headless` | `true` |
-| `channel` | `chromium` |
-| `viewport` | 1920 × 1080 |
-| `navigationTimeout` | 120,000 ms |
-| `actionTimeout` | 30,000 ms |
-| `reporter` | `html`, `list` |
+### Misc
+
+| Variable | Required | Description |
+|---|---|---|
+| `RECORD_VIDEO` | optional | Set to `true` to record `.webm` video for every test |
 
 ---
 
@@ -178,501 +182,566 @@ All environment variables above are stored as repository secrets:
 ### Prerequisites
 
 ```bash
-node -v        # v18+ required, v24 recommended
-npm ci         # install dependencies
-npx playwright install chromium --with-deps
-```
-
-### Create `.env` file
-
-Copy the template from Section 4 and fill in your credentials.
-
-### Run a single suite
-
-```bash
-npx playwright test tests/login-pom.spec.ts
-npx playwright test tests/order-workflow-pom.spec.ts
-npx playwright test tests/sftp-upload-pom.spec.ts
+node -v                                # v18+ required, v20 recommended
+npm ci                                 # install dependencies
+npx playwright install chromium        # install Chromium browser
+cp .env.example .env                   # fill in credentials
 ```
 
 ### Run all suites
 
 ```bash
-npm test
-# or
 npx playwright test
 ```
 
-### Run with visible browser (headed mode)
+### Run a single suite
 
 ```bash
-npx playwright test tests/product-create-pom.spec.ts --headed
+npx playwright test tests/11-order-workflow-pom.spec.ts
 ```
 
-### View HTML report after run
+### Run a specific test by name
+
+```bash
+npx playwright test --grep "TV icon"
+```
+
+### Enable video recording for a run
+
+```bash
+RECORD_VIDEO=true npx playwright test
+```
+
+Or set `RECORD_VIDEO=true` in `.env` to keep it on permanently.
+
+### View HTML report
 
 ```bash
 npx playwright show-report
+# Opens playwright-report/ in browser.
+# Screenshots and videos are embedded inline.
 ```
 
-### npm scripts shorthand
-
-| Command | Suite |
-|---|---|
-| `npm run test:login` | Login |
-| `npm run test:dashboard` | Dashboard |
-| `npm run test:create` | Product Create |
-| `npm run test:edit` | Product Edit |
-| `npm run test:delete` | Product Delete |
-| `npm run test:filters` | Product Filters |
-| `npm run test:validations` | Product Validations |
-| `npm run test:import` | Product Import |
-| `npm run test:stock` | Stock Import |
-| `npm run test:export` | Export |
-| `npm run test:orders` | Orders |
-| `npm run test:orders-filters` | Orders Filters |
-
-### Seed test orders (SFTP)
+### Clean up artifacts
 
 ```bash
-npx tsx scripts/seed-orders.ts
+rm -rf test-results/ screenshots/
 ```
 
-This uploads GORDP XML files for 3 test orders via SFTP. Wait 30–60 seconds for the platform to create the orders, then run the order-workflow tests.
-
 ---
 
-## 6. CI/CD Pipeline
+## 6. Playwright Configuration
 
-**File:** `.github/workflows/playwright.yml`
+**File:** `playwright.config.ts`
 
-### Triggers
-
-- `push` to `main` or `master`
-- `pull_request` to `main` or `master`
-- Scheduled: **daily at 06:00 UTC**
-- Manual via `workflow_dispatch` (optionally specify a single test file)
-
-### Strategy
-
-- **14 parallel jobs**, one per test suite (matrix strategy)
-- `fail-fast: false` — all suites run even if one fails
-- `max-parallel: 1` — runs sequentially to avoid session conflicts on staging
-
-### Artifacts (retained automatically)
-
-| Artifact | Retention |
-|---|---|
-| `screenshots-<suite>` | 7 days |
-| `playwright-report-<suite>` | 14 days |
-
-### Job steps (per suite)
-
-1. Checkout repository
-2. Setup Node.js v24
-3. `npm ci`
-4. Install Chromium + dependencies
-5. `mkdir -p screenshots`
-6. Run tests with `--reporter=html,list`
-7. Upload screenshots
-8. Upload HTML report
-
----
-
-## 7. Page Object Model (Pages)
-
-### `LoginPage` (`pages/login.page.ts`)
-
-| Method | Description |
-|---|---|
-| `login(username, password)` | Navigates to login page, fills credentials, submits, handles session popups |
-
-### `NavigationPage` (`pages/navigation.page.ts`)
-
-| Method | Description |
-|---|---|
-| `navigateToProducts()` | Clicks Products in sidebar |
-| `navigateToOrders()` | Clicks Orders in sidebar |
-| `navigateToDashboard()` | Clicks Dashboard in sidebar |
-
-> **Important:** Navigation must use sidebar clicks, not `page.goto()`. The Angular SPA requires menu activation to render tab content in the DOM.
-
-### `ProductListPage` (`pages/product-list.page.ts`)
-
-| Method | Description |
-|---|---|
-| `expectTableVisible()` | Asserts the product grid is visible |
-| `clickNew()` | Clicks the New button to open the product form |
-| `getPaginationText()` | Returns pagination summary string |
-
-### `ProductFormPage` (`pages/product-form.page.ts`)
-
-| Method | Description |
-|---|---|
-| `fillField(label, value)` | Fills a form field by its label text |
-| `fillTitle(text)` | Fills the German title field |
-| `fillDescription(text)` | Fills the description textarea |
-| `fillMediaUrl(url)` | Navigates to Media tab and fills the image URL |
-| `fillField('Brand', value)` | Fills Angular autocomplete; sends Escape to commit value |
-| `clickTab(tabName)` | Clicks a form tab by name |
-| `clickSave()` | Clicks Save |
-| `expectFormVisible()` | Asserts the form is open |
-| `expectBodyContains(text)` | Asserts `page.body` contains text |
-| `expectFieldValueByLabel(label, value)` | Asserts a field has the expected value |
-| `expectHasError()` | Asserts at least one validation error is visible |
-| `selectFirstCategory()` | Opens the category dropdown and picks the first option |
-
-> **Angular autocomplete note:** After `fill()`, the helper sends `Escape` keypress to commit the value into the Angular component state. Without this, the autocomplete value is stored in the component but not in the raw DOM `.value`, causing assertion failures.
-
-### `OrdersPage` (`pages/orders.page.ts`)
-
-| Method | Description |
-|---|---|
-| `navigateToOrders()` | Navigates to the Orders list via sidebar |
-
-### `DashboardPage` (`pages/dashboard.page.ts`)
-
-| Method | Description |
-|---|---|
-| Various assertion helpers | KPI counts, section visibility |
-
----
-
-## 8. Helpers
-
-### `helpers/edi-builder.ts`
-
-Builds EDI XML messages for both directions of EDI communication.
-
-#### Supplier → Platform (uploaded to `partner2dg`)
-
-| Function | Message | Purpose |
+| Setting | Value | Notes |
 |---|---|---|
-| `buildGORDR(orderId, positions)` | GORDR | Order confirmation (accept order) |
-| `buildGDELR(orderId, positions, shipmentNo, carrier)` | GDELR | Delivery/shipment confirmation |
-| `buildGCANR(orderId, status, reason)` | GCANR | Cancellation response |
-| `buildGSURN(orderId, status, positions, reason)` | GSURN | Return response |
-
-#### Platform → Supplier (read from `dg2partner`)
-
-| Function | Message | Purpose |
-|---|---|---|
-| `buildGORDP(orderId, positions, address)` | GORDP | New order from platform (used for seeding) |
-| `buildGCANP(orderId, positions, reason)` | GCANP | Cancellation request from customer |
-| `buildGRETP(orderId, positions, reason)` | GRETP | Return request from customer |
-
-**Filename format:** `{TYPE}_{SUPPLIER_ID}_{ORDER_ID}_{TIMESTAMP}.xml`
+| `testDir` | `./tests` | |
+| `testIgnore` | `**/old/**` | |
+| `timeout` | 300,000 ms | 5 min per test — SPA is slow |
+| `expect.timeout` | 30,000 ms | |
+| `baseURL` | `process.env.BASE_URL` | |
+| `headless` | `true` | |
+| `viewport` | 1920 × 1080 | |
+| `navigationTimeout` | 120,000 ms | |
+| `actionTimeout` | 30,000 ms | |
+| `userAgent` | Chrome 120 / macOS | Avoids bot-detection |
+| `--disable-blink-features` | `AutomationControlled` | Avoids detection |
+| `--no-sandbox` | enabled | Required for CI |
+| `screenshot` | `only-on-failure` | |
+| `video` | `on` if `RECORD_VIDEO=true`, else `off` | |
+| `reporter` | `html`, `list` | |
+| Browser | `chromium` | Single project |
 
 ---
 
-### `helpers/sftp-upload.ts`
+## 7. Page Object Model
 
-`SftpHelper` class wrapping `ssh2-sftp-client`. Reads all connection details from environment variables.
+All DOM interactions live in page classes. Tests never use raw locators directly.
+
+### `BasePage` — `pages/base.page.ts`
+
+Base class extended by `OrdersPage`. Provides shared utilities.
 
 | Method | Description |
 |---|---|
-| `connect()` | Establishes SFTP connection |
+| `screenshot(name)` | Saves `screenshots/{name}.png` — failure in screenshot never aborts test |
+| `getBodyText()` | Returns full body `innerText` |
+| `waitForLoad(seconds)` | `page.waitForTimeout(seconds * 1000)` |
+| `pressEscape()` | Presses Escape, waits 2s |
+| `scrollToBottom()` | Scrolls page to bottom |
+| `scrollToTop()` | Scrolls page to top |
+
+---
+
+### `LoginPage` — `pages/login.page.ts`
+
+Handles the slow Angular login form for `stage.sellon.ch`.
+
+**Key behaviors:**
+- `goto()` retries up to 3 times with a broad CSS selector wait (`input[type="text"], input[type="password"]`) — the SPA takes 30–120s to render the login form
+- Uses `pressSequentially()` with 150ms delay (Lobster requires real keystrokes; `fill()` bypasses keyboard events that trigger autocomplete and validation)
+- Handles the "existing session" Yes/No modal after login
+
+| Method | Description |
+|---|---|
+| `goto()` | Navigate to `BASE_URL` with retry loop, 90s input wait |
+| `fillUsername(username)` | Click + `pressSequentially` with 150ms delay |
+| `fillPassword(password)` | Click + `pressSequentially`, retries if field is empty |
+| `clickLogin()` | Clicks Login button |
+| `login(user, pass)` | Full flow: `goto` → fill → submit → handle session popup |
+| `isLoggedIn()` | `true` if Login button is gone |
+
+---
+
+### `DashboardPage` — `pages/dashboard.page.ts`
+
+Waits for the SPA to fully render and exposes dashboard section assertions.
+
+| Method | Description |
+|---|---|
+| `waitForDashboard()` | Waits for `.menu-icon` + `lb-modal-blocking` hidden + 5s buffer |
+| `expectAllSectionsVisible()` | Asserts all 7 dashboard headings are visible |
+| `screenshot(name)` | Saves screenshot |
+| `getBodyText()` | Returns body `innerText` |
+
+---
+
+### `NavigationPage` — `pages/navigation.page.ts`
+
+Opens the sidebar and navigates to any section. Dismisses blocking modals before interacting.
+
+| Method | Description |
+|---|---|
+| `navigateToDashboard()` | Opens sidebar → clicks Dashboard |
+| `navigateToProducts()` | Opens sidebar → expands Product submenu → clicks Product |
+| `navigateToOrders()` | Opens sidebar → expands Orders submenu → clicks Orders |
+
+> **Important:** Navigation must use sidebar clicks, not `page.goto()`. The SPA requires menu activation to render section content.
+
+---
+
+### `ProductListPage` — `pages/product-list.page.ts`
+
+Wraps the product data grid. All ribbon button locators use `RIBBON` constants from `helpers/selectors.ts`.
+
+| Method | Description |
+|---|---|
+| `newBtn()` / `deleteBtn()` / `exportBtn()` | Ribbon button locators |
+| `importBtn()` / `clearBtn()` / `searchBtn()` | Ribbon button locators |
+| `ribbonButtonsVisible()` | Returns `Record<string, boolean>` for visible ribbon buttons |
+| `clickNew()` | Dispatches click on New, waits 10s |
+| `clickImport()` | Clicks Import, waits 10s |
+| `clickRefresh()` | Clicks Refresh, waits 10s |
+| `clickClear()` | Clicks Clear, waits 3s |
+| `getPaginationText()` | Returns `"X - Y of Z"` string |
+| `getRowCount()` | Returns `tbody tr` count |
+| `doubleClickProduct(text)` | Double-clicks first row containing `text`, waits 10s |
+
+---
+
+### `ProductFormPage` — `pages/product-form.page.ts`
+
+Handles the multi-tab product creation/edit form.
+
+**Key behavior — `findInputIndex(label)`:**
+A DOM-walking strategy that locates form inputs by their label text using 4 fallback strategies:
+1. Proper `<label for="...">` elements
+2. Leaf/near-leaf span/div elements (skips block containers)
+3. Placeholder attribute matching
+4. Positional heuristics
+
+This approach bypasses React's re-render resets that invalidate direct `.value` assignments.
+
+| Method | Description |
+|---|---|
+| `fillField(label, value)` | Finds input by label, clears, fills via `pressSequentially` |
+| `clickTab(tabName)` | Clicks a product form tab by name |
+| `save()` | Clicks Save button |
+| `expectValidationError(text)` | Asserts validation error text is visible |
+| `findInputIndex(label)` | Returns DOM index of input associated with label |
+
+---
+
+### `OrdersPage` — `pages/orders.page.ts`
+
+Extends `BasePage`. Wraps the Orders list. Re-exports `RIBBON`, `ORDER_STATUS`, `COLUMN`, `DIALOG` for convenience.
+
+| Method | Description |
+|---|---|
+| `navigateToOrders()` | Opens sidebar → expands Orders → clicks Orders, waits 15s |
+| `expectOrderTableVisible()` | Asserts ID column header visible |
+| `getRowCount()` | Returns `tbody tr` count |
+| `getPaginationText()` | Returns `"X - Y of Z"` string |
+| `getPaginationTotal()` | Parses and returns the `Z` total as number |
+| `filterCell(colIndex)` | Returns the filter row input locator for a column |
+
+---
+
+## 8. Helpers & Utilities
+
+### `helpers/selectors.ts` — Centralized UI Labels
+
+Single source of truth for every UI label string. All tests and page classes import from here.
+
+When Sellon renames a button, only this file needs updating.
+
+```typescript
+RIBBON.NEW / DELETE / EXPORT / IMPORT / CLEAR / SEARCH / MASS_EDIT / STOCK_IMPORT
+RIBBON.EDIT / CANCEL / CREATE_NEW_SHIPMENT / NEW_SHIPMENT
+ORDER_STATUS.NEW / CONFIRMED / SHIPPED / CANCELLED
+PRODUCT_STATE.STAGE_1 / STAGE_2 / ERROR
+TAB.MASTER_DATA / PRICE_AND_STOCK / MEDIA / SUPPLEMENTARY / GALAXUS / ORDER_ITEMS
+COLUMN.ID / ORDER_ID / STATUS / OWNER / ...
+DIALOG.YES / NO / CANCEL / SAVE / DELETE / CONFIRM
+CANCEL_PATTERNS / CONFIRM_PATTERNS  // regex arrays for order action detection
+```
+
+---
+
+### `helpers/edi-builder.ts` — EDI XML Builder
+
+Builds and parses **openTRANS 2.1** EDI XML messages used by the Sellon platform.
+
+#### EDI directions
+
+```
+partner2dg  = supplier → Sellon  (GORDR, GDELR, GCANP, GCANR, GSURN)
+dg2partner  = Sellon → supplier  (GORDP, GCANP, GRETP)
+```
+
+#### Exported functions
+
+| Function | Message type | Direction |
+|---|---|---|
+| `buildGordr(orderId, positions)` | GORDR | Supplier → Platform |
+| `buildGdelr(orderId, positions, shipmentNo, carrier)` | GDELR | Supplier → Platform |
+| `buildGcanr(orderId, status, reason)` | GCANR | Supplier → Platform |
+| `buildGsurn(orderId, status, positions, reason)` | GSURN | Supplier → Platform |
+| `buildGordp(orderId, positions, address)` | GORDP | Platform → Supplier (seeding) |
+| `buildGcanp(orderId, positions, reason)` | GCANP | Platform → Supplier (seeding) |
+| `buildGretp(orderId, positions, reason)` | GRETP | Platform → Supplier (seeding) |
+| `parseGordpXml(content)` | — | Parse incoming GORDP, returns `ParsedOrder` |
+
+`parseGordpXml` is used by test 17 to extract order IDs from the fixture XML files before admin cleanup.
+
+**Filename format:** `{TYPE}_{SUPPLIER_ID}_{TIMESTAMP}.xml`
+
+---
+
+### `helpers/sftp-upload.ts` — SFTP Helper
+
+Wraps `ssh2-sftp-client`. Reads all config from environment variables.
+
+| Method | Description |
+|---|---|
+| `connect()` | Establishes SFTP connection (no-op if already connected) |
 | `disconnect()` | Closes connection |
-| `uploadEDI(localPath)` | Uploads a local file to `SFTP_REMOTE_IN_DIR` |
-| `uploadEDIContent(content, filename)` | Uploads string content as a file (no temp file needed) |
-| `listFiles(dir?)` | Lists files in a remote directory |
-| `downloadFileContent(path)` | Downloads file content as string |
-| `waitForFile(pattern, timeoutMs)` | Polls `SFTP_REMOTE_OUT_DIR` until a filename matching `pattern` appears |
-| `deleteFile(path)` | Deletes a remote file |
-| `testConnection()` | Tests connection and lists both directories |
-| `isConfigured` | `true` if `SFTP_HOST` env var is set |
+| `get isConfigured` | `true` if `SFTP_HOST` env var is set |
+| `upload(localPath, remoteDir)` | Uploads file to remote directory |
+| `uploadContent(content, filename, remoteDir)` | Uploads string as file |
+| `list(remoteDir)` | Lists remote directory |
+| `download(remotePath)` | Downloads file as string |
+| `delete(remotePath)` | Deletes remote file |
 
-`getSftpHelper()` — singleton accessor. If `SFTP_HOST` is not set, all methods gracefully skip (no crash).
+All methods silently skip if `SFTP_HOST` is not configured — no crash in environments without SFTP access.
 
-#### SFTP Directory Structure
+#### SFTP directory structure
 
 ```
 /uploads/stage/OrderData/Test/
-├── partner2dg/    ← Supplier uploads EDI IN here  (GORDR, GDELR, GCANR, GSURN)
-└── dg2partner/    ← Platform writes EDI OUT here   (GORDP, GCANP, GRETP)
-                      Supplier reads/seeds from here
+├── partner2dg/   ← Supplier uploads responses here  (GORDR, GDELR, GCANR, GSURN)
+└── dg2partner/   ← Platform writes orders here       (GORDP, GCANP, GRETP)
 ```
 
 ---
 
-## 9. Test Specifications — All 14 Suites
+### `global-setup.ts`
 
-All suites use:
-- `test.describe.configure({ mode: 'serial' })` — tests run sequentially within a suite
-- `browser.newContext()` with 1920×1080 viewport
-- Login via `LoginPage` in `beforeAll`
-- `browser.close()` in `afterAll`
+Runs before all tests. Launches a Chromium browser, navigates to `BASE_URL`, logs all found inputs and buttons, and saves `login-page.png`. Purpose: debug environment issues in CI before any test runs.
+
+### `global-teardown.ts`
+
+Runs after all tests. Deletes `auth-state.json` if it exists to prevent stale auth from leaking between CI runs.
 
 ---
 
-### 9.1 Login POM
+## 9. Test Suites — All 17 Files
 
-**File:** `tests/login-pom.spec.ts`
-**Test count:** 6
+All suites run in **serial mode** within their file. Each creates its own browser context with `chromium.launch()` or `browser.newContext()` and performs its own login unless noted.
 
-Validates the authentication flow against the Sellon login page.
+---
+
+### 01 — Login
+
+**File:** `tests/01-login-pom.spec.ts`
+**Tests:** 6
 
 | Test | Description |
 |---|---|
-| POM Login: valid credentials should reach dashboard | Happy path — valid user lands on dashboard |
-| POM Login: invalid password should stay on login page | Wrong password — stays on login |
-| POM Login: empty fields should stay on login page | Empty submit — stays on login |
-| POM Login: SQL injection in username | `' OR 1=1 --` — safely rejected |
-| POM Login: whitespace-only credentials | Spaces-only — stays on login |
-| POM Login: valid username with wrong case password | Case-sensitive password check |
+| Valid credentials | Happy path — lands on dashboard |
+| Invalid password | Wrong password — stays on login page |
+| Empty fields | Empty submit — stays on login page |
+| SQL injection | `' OR 1=1 --` in username — safely rejected |
+| Whitespace-only | Spaces-only credentials — stays on login page |
+| Wrong case password | Case-sensitive password check |
 
 ---
 
-### 9.2 Dashboard POM
+### 02 — Dashboard
 
-**File:** `tests/dashboard-pom.spec.ts`
-**Test count:** ~17
+**File:** `tests/02-dashboard-pom.spec.ts`
+**Tests:** 20+
+**Mode:** Serial — shared `beforeAll` login
 
-Validates the Dashboard page and navigates to Products to verify cross-page data consistency.
-
-| Section | Tests |
+| Group | Tests |
 |---|---|
 | Dashboard sections | All 7 sections visible |
-| Products KPI | Total, Complete, Incomplete, Invalid counts |
-| Orders KPI | Total orders, New orders count |
+| Products KPI | Total, complete, incomplete, invalid counts |
+| Orders KPI | Total, new orders count |
 | Delivery Rate KPI | Merchant reliability metric visible |
 | Cancel Rate KPI | Cancellation metrics visible |
-| Import section | Recent imports, stock updates, failed/successful products |
+| Import section | Recent imports, stock updates, failed/successful |
 | Export Galaxus | Latest exports with product count |
-| Scheduler | Next planned export times visible |
-| Locale | Dashboard displayed in user's locale language |
-| Product list cross-check | Navigate to Products — table, pagination, toolbar, columns visible |
-| Negative | All numeric counts ≥ 0; incomplete count ≤ total |
+| Scheduler | Next planned export times |
+| Locale | Dashboard in user's locale language |
+| Full capture | Full-page screenshot |
+| Products list | Navigate to Products — table, pagination, toolbar, columns, pagination, refresh, verify company products only |
+| TV icon (layout) | Layout selector opens, vertical + quarter options work |
+| Fullscreen | TV icon + expand button enter fullscreen |
 
 ---
 
-### 9.3 Product Create POM
+### 03 — Product Create
 
-**File:** `tests/product-create-pom.spec.ts`
-**Test count:** 20 steps
+**File:** `tests/03-product-create-pom.spec.ts`
+**Tests:** 18
+**Mode:** Serial
 
-Full product creation flow using dynamically generated unique values per run:
-- `TEST_GTIN` — valid GTIN-13 (check-digit calculated at runtime)
-- `TEST_SKU` — `POM-{timestamp}` (unique per run)
+Step-by-step creation flow. Each step is its own test to isolate failures.
 
 | Step | Action |
 |---|---|
 | 1 | Click New — product form opens |
-| 2 | Verify all required tabs present (Master data, Price & stock, Media, Galaxus) |
-| 2b | Save empty form — verify all expected validation errors and warnings appear |
-| 3 | Fill GTIN |
-| 4 | Fill Provider key (SKU) |
-| 5 | Fill Brand (Angular autocomplete) |
-| 6 | Fill Title DE |
-| 7 | Fill Description DE |
-| 8 | Fill Weight + select first Category |
-| 9 | Navigate to Price & stock tab — verify fields visible |
-| 10 | Fill Selling price |
-| 11 | Fill VAT |
-| 12 | Fill Stock quantity |
-| 12b | Fill Media URL |
-| 13 | Save — navigate to Master data tab — assert SKU in body |
-| 14 | Verify SKU, GTIN, and Brand all present in body |
+| 2 | Verify all required tabs present |
+| 2b | Save empty form — verify all validation errors |
+| 3–12b | Fill GTIN, provider key, brand, title DE, description DE, weight, category, selling price, VAT, stock, media URL |
+| 13 | Save — verify provider key in body |
+| 14 | Verify SKU, GTIN, brand all present |
 | 15 | Invalid GTIN checksum rejected |
 | 16 | Empty provider key rejected |
-| 17 | Invalid VAT (5.00) rejected |
+| 17 | Invalid VAT rejected |
 | 18 | Stock > 99999 rejected |
-| 19 | Zero price rejected |
-| 20 | Final save with all valid data |
-
-> **Known issue resolved:** After `fillMediaUrl()`, Angular renders the Media tab as active. Inactive tab content is not in the DOM. Steps 13 and 14 now navigate to **Master data tab** before asserting body text. This fixed a CI failure where `innerText()` only returned `"Product\nProduct Details\nOnline"`.
 
 ---
 
-### 9.4 Product Edit POM
+### 04 — Product Edit
 
-**File:** `tests/product-edit-pom.spec.ts`
-**Test count:** 9
+**File:** `tests/04-product-edit-pom.spec.ts`
+**Tests:** 10
 
 | Test | Description |
 |---|---|
-| Double-click product to open edit form | Opens an existing product |
-| Verify Master data tab fields | GTIN, Provider key, Brand, Weight visible |
+| Double-click product | Opens edit form |
+| Verify Master data fields | GTIN, provider key, brand, weight visible |
 | Edit Brand field | Updates brand value |
 | Edit Weight field | Updates weight value |
 | Navigate to Price & stock tab | Tab navigation works |
-| Save changes | Changes persist after save |
-| Invalid GTIN checksum rejected | Validation error on bad GTIN |
-| Empty provider key rejected | Validation error on empty SKU |
-| Invalid VAT rejected | Validation error on invalid VAT |
+| Save changes | Changes persist |
+| Invalid GTIN rejected | Validation error |
+| Empty provider key rejected | Validation error |
+| Invalid VAT rejected | Validation error |
+| Mass edit | Select products → set Active → verify |
 
 ---
 
-### 9.5 Product Delete POM
+### 05 — Product Filters
 
-**File:** `tests/product-delete-pom.spec.ts`
-**Test count:** 10
+**File:** `tests/05-product-filters-pom.spec.ts`
+**Tests:** 19
 
-| Test | Description |
-|---|---|
-| Single Delete 1 | Delete a Stage 1 product |
-| Single Delete 2 | Delete a Stage 2 product |
-| Single Delete 3 | Delete a product with Error status |
-| Single Delete 4 | Cancel deletion — product remains |
-| Bulk Delete 1 | Select all → delete all |
-| Bulk Delete 2 | Select 3 specific → delete 3 |
-| Bulk Delete 3 | Select multiple → cancel → all remain |
-| Edge Case 1 | Delete button without selection — no crash |
-| Edge Case 2 | Product count decreases by correct amount |
-| Edge Case 3 | Deleted product does not reappear in list |
-| Final | Verify list state after all deletions |
-
----
-
-### 9.6 Product Filters POM
-
-**File:** `tests/product-filters-pom.spec.ts`
-**Test count:** 17
-
-Validates all filter types on the Products grid.
-
-| Test | Filter tested |
+| Test | Filter |
 |---|---|
 | TC-01 | State = "Stage 1" |
 | TC-02 | Clear button restores full dataset |
 | TC-03 | ID filter — single product |
-| TC-04 | Multi-select Category (skipped — pending UI fix) |
 | TC-05 | Partial title text "Ant" |
 | TC-06 | Stock quantity = 200 |
 | TC-07 | State = "Stage 2" |
 | TC-08 | State = "Error" |
 | TC-09 | Name = "SoundBlast" |
 | TC-10 | Name = non-existing → 0 results |
-| TC-11 | Provider key starts with "BT-SPK" |
+| TC-11 | Provider key = "BT-SPK" |
 | TC-12 | VAT = "8.10" |
-| TC-13 | Combined: State "Stage 2" + Provider key "BT-SPK" |
+| TC-13 | Combined: Stage 2 + Provider key "BT-SPK" |
 | TC-14 | Horizontal scroll reveals hidden columns |
-| TC-15 | Pagination indicator updates after filter |
-| TC-16 | Price filter "< 12" |
-| TC-17 | Price filter "> 12" |
+| TC-15 | Pagination updates after filter |
+| TC-16 | Price < 12 |
+| TC-17 | Price > 12 |
+| TC-18 | Special characters in Name — no crash |
+| Ribbon | Double-arrow collapses and restores ribbon |
+| TC-19 | Contradictory filters → 0 results |
 
 ---
 
-### 9.7 Product Validations POM
+### 06 — Product Validations
 
-**File:** `tests/product-validations-pom.spec.ts`
-**Test count:** ~20
+**File:** `tests/06-product-validations-pom.spec.ts`
+**Tests:** 20
 
-Field-level validation rules for the product form. Uses `beforeEach` to open a fresh product form for each test.
+Field-level validation rules. Each test opens a fresh product form.
 
 | Field | Tests |
 |---|---|
-| GTIN | Valid GTIN-8 accepted; invalid GTIN-8 rejected; valid/invalid GTIN-12, -13, -14 |
-| Provider key | > 50 characters rejected; valid characters accepted (A-Z, 0-9, `. , ! ? - _ @`) |
+| GTIN | Valid + invalid for all 4 lengths: GTIN-8, -12, -13, -14 |
+| Provider key | > 50 chars rejected; valid characters accepted (A-Z, 0-9, `. , ! ? - _ @`) |
 | Price | Negative rejected; maximum valid accepted |
 | VAT | 2.60% accepted; 8.10% accepted |
 | Stock | Negative rejected; zero accepted |
-| Supplementary data | Tab opens correctly |
-| Media | Tab opens correctly |
-| Galaxus | Tab opens correctly |
-| GTIN empty | Product status becomes Invalid |
-| Brand | Up to 100 characters accepted |
+| Tabs | Supplementary data, Media, Galaxus tabs open correctly |
+| Empty GTIN | Product becomes Invalid status |
 
 ---
 
-### 9.8 Product Import POM
+### 07 — Product Import
 
-**File:** `tests/product-import-pom.spec.ts`
-**Test count:** 9
-
-Tests CSV bulk import functionality.
+**File:** `tests/07-product-import-pom.spec.ts`
+**Tests:** 6
+**Mode:** Serial
+**Fixtures:** `test-data/import-products.csv`, `test-data/import-products.xlsx`
 
 | Step | Description |
 |---|---|
-| Step 2 | Click Import button |
-| Step 3 | Try import without file — error shown |
-| Step 4 | Close error and reopen import dialog |
-| Step 5 | Upload valid CSV file |
-| Step 6 | Run the import |
-| Step 7 | Wait for import to complete |
-| Step 8 | Close import popup |
-| Negative | Non-CSV file upload shows error |
+| 1 | Open import dialog |
+| 2 | Submit without file — validation error shown |
+| 3 | Upload CSV file + run import |
+| 4 | Close dialog after CSV import |
+| 5 | Upload XLSX file — successful import |
+| 6 | Upload PNG file — format rejection |
 
 ---
 
-### 9.9 Stock Import POM
+### 08 — Stock Import
 
-**File:** `tests/stock-import-pom.spec.ts`
-**Test count:** 9
-
-Tests the Stock Import (stock quantity update via CSV).
+**File:** `tests/08-stock-import-pom.spec.ts`
+**Tests:** 12
+**Mode:** Serial
+**Fixtures:** `test-data/stock-update.csv`, `test-data/stock-update.xlsx`
 
 | Step | Description |
 |---|---|
-| Step 1 | Verify products before stock update — note baseline counts |
-| Step 2 | Click Stock import button |
-| Step 3 | Try import without file — error shown |
-| Step 4 | Close error and reopen dialog |
-| Step 5 | Upload stock update CSV |
-| Step 6 | Run the stock import |
-| Step 7 | Wait for completion |
-| Step 8 | Close dialog + verify product list updates |
-| Negative | Non-CSV file upload shows error |
+| 1 | Verify products before stock update |
+| 2 | Click Stock import button |
+| 3 | Submit without file — error shown |
+| 4 | Close error, reopen dialog |
+| 5 | Upload stock update CSV |
+| 6 | Run the import |
+| 7 | Wait for completion |
+| 8 | Close dialog + verify list updates |
+| Negative | Non-CSV file → error |
+| 9 | Upload XLSX — successful import |
+| Negative | Upload PNG — format rejection |
+| Negative | CSV with wrong columns — validation error |
 
 ---
 
-### 9.10 Export POM
+### 09 — Export
 
-**File:** `tests/export-pom.spec.ts`
-**Test count:** 11
-
-Tests Galaxus product export workflow.
+**File:** `tests/09-export-pom.spec.ts`
+**Tests:** 11
+**Mode:** Serial
 
 | Step | Description |
 |---|---|
-| Step 1 | Verify products before export |
-| Step 2 | Verify Export button exists |
-| Step 3 | Click Export button |
-| Step 4 | Handle export confirmation dialog |
-| Step 5 | Wait for export to complete |
-| Step 6 | Verify export status updated |
-| Step 7 | Verify products with errors not in export count |
-| Step 8 | Verify export appears on Dashboard |
-| Step 9 | Verify Scheduler shows next planned export |
-| Negative 1 | Products with Error state not counted as exported |
-| Negative 2 | Export dialog can be cancelled without exporting |
+| 1 | Verify products before export |
+| 2 | Export button exists |
+| 3 | Click Export button |
+| 4 | Handle confirmation dialog |
+| 5 | Wait for export to complete |
+| 6 | Verify export status updated |
+| 7 | Error-state products not in export count |
+| 8 | Export appears on dashboard |
+| 9 | Scheduler shows next planned export |
+| Negative 1 | Error products excluded from count |
+| Negative 2 | Dialog can be cancelled without exporting |
 
 ---
 
-### 9.11 Orders POM
+### 10 — SFTP Upload
 
-**File:** `tests/orders-pom.spec.ts`
-**Test count:** 8
+**File:** `tests/10-sftp-upload-pom.spec.ts`
+**Tests:** 4
 
-Validates the Orders list page and Excel export.
+Validates SFTP connection and the GORDP order-creation flow.
 
 | Test | Description |
 |---|---|
-| Navigate to Orders | Orders page loads correctly |
-| Display order data | Grid shows order rows |
-| Orders page content | Key elements visible |
-| Open order detail | Double-click opens order detail |
-| Export without selection | All orders exported as XLSX |
-| Export with 1 selected | Only selected order in XLSX |
-| Export with multiple selected | Only selected orders in XLSX |
-| Negative: non-existent ID | No results + no crash |
-| Negative: export no rows | All exported — no crash |
+| Connection + directory listing | Connects; lists both `partner2dg` and `dg2partner` |
+| Check directory status | Reports files in both directories |
+| Upload GORDP — create order | Uploads fixture GORDP to `dg2partner`, waits for order in Sellon |
+| Verify order in Orders tab | Navigates to Orders page, confirms order is visible |
+
+> All tests skip gracefully if `SFTP_HOST` is not set.
 
 ---
 
-### 9.12 Orders Filters POM
+### 11 — Order Workflow (EDI Round-Trip)
 
-**File:** `tests/orders-filters-pom.spec.ts`
-**Test count:** 11
+**File:** `tests/11-order-workflow-pom.spec.ts`
+**Tests:** 8
+**Mode:** Serial
+**CI timeout:** 90 minutes
 
-Validates all filter types on the Orders grid. Uses a discovery test (TC-00) to detect column positions dynamically.
+Full EDI order lifecycle combining UI actions with SFTP uploads and downloads.
+
+| Test | Description |
+|---|---|
+| Step 1 | Find single-item order, confirm positions |
+| Step 2 | Add shipment on Shipping tab |
+| Step 3 | Verify order status after shipment |
+| Step 4 (Positive) | Confirm a New order — positions confirmed, status updates |
+| Step 5 (Positive) | Filter orders by status — only matching rows shown |
+| Step 6 (Negative) | Cancel a New order — status changes to Cancelled |
+| Step 7 (Negative) | Create shipment with missing required fields is blocked |
+| Step 8 (Negative) | Search for non-existent order ID returns empty result |
+
+**EDI files exercised:** GORDP (fixture), GORDR, GDELR, GCANP, GCANR, GRETP, GSURN
+
+---
+
+### 12 — Orders
+
+**File:** `tests/12-orders-pom.spec.ts`
+**Tests:** 10
+
+| Test | Description |
+|---|---|
+| Navigate to Orders | Orders page loads |
+| Display order data | Grid shows order rows |
+| Orders page content | Key elements visible |
+| Open order detail | Row click opens detail |
+| Export without selection | All orders exported as XLSX |
+| Export with 1 selected | Only selected order in XLSX |
+| Export with multiple selected | Only selected orders in XLSX |
+| Negative: non-existent ID | No results, no crash |
+| Ribbon collapse | Double-arrow collapses and restores ribbon |
+| Negative: export no selection | All exported — no crash |
+
+---
+
+### 13 — Orders Filters
+
+**File:** `tests/13-orders-filters-pom.spec.ts`
+**Tests:** 11
+
+Uses a discovery test (TC-00) to detect column positions dynamically — no hardcoded column indices.
 
 | Test | Description |
 |---|---|
 | TC-00 | Discover orders grid columns and filter row |
-| TC-01 | Filter by Order ID — only that order shown |
-| TC-02 | Clear filters restores full order count |
-| TC-03 | Filter by Status dropdown — only matching orders |
+| TC-01 | Filter by Order ID |
+| TC-02 | Clear filters restores full count |
+| TC-03 | Status dropdown filter |
 | TC-04 | Text filter on first available text column |
 | TC-05 | Date range filter |
 | TC-06 | Combined ID + Status filter |
@@ -683,198 +752,190 @@ Validates all filter types on the Orders grid. Uses a discovery test (TC-00) to 
 
 ---
 
-### 9.13 Order Workflow POM
+### 14 — Split Shipment
 
-**File:** `tests/order-workflow-pom.spec.ts`
-**Test count:** ~92 (across 3 describe blocks)
-
-This is the most complex test suite. It covers the **full end-to-end EDI order lifecycle** across three orders, each exercising a different workflow path.
-
-#### Architecture
-
-```
-beforeAll → discoverOrders(3)       ← Finds real order IDs from staging grid
-            ↓ ORDER_1, ORDER_2, ORDER_3 populated at runtime
-
-Each ORDER describe:
-  Test 2 (delivery address) → extractPositions()  ← Reads SKUs from Order items tab
-  All subsequent tests use order1/2/3Positions[]    ← No hardcoded SKUs
-```
-
-#### Key design: dynamic order discovery
-
-No order IDs or SKUs are hardcoded. Two helper functions run at runtime:
-
-- **`discoverOrders(count)`** — scans the orders grid `tbody` for numeric IDs (6–12 digits), returns up to `count` IDs
-- **`extractPositions()`** — opens the "Order items" tab of the current order, reads provider key patterns (`[A-Z]{2,8}-[A-Z]{2,8}-?\d{2,4}`) and quantities
-- **`sftpPat(type, orderId)`** — builds SFTP wait patterns: `new RegExp('GCANR.*' + ORDER_1, 'i')` instead of hardcoded `/GCANR.*61830301/i`
-
-#### ORDER 1 — Reject/Return Workflow (32 tests)
-
-| Phase | Tests |
-|---|---|
-| Discovery | Order found in overview; notification |
-| Open | Delivery address verified; positions extracted |
-| CANP handling | Import CANP; cancellation tab opens; order items locked; reject requires customer message |
-| GCANR on SFTP | Wait for cancellation response file |
-| Reject cancel | Fill reason; save; read-only after reject; GSURN-check |
-| Confirm position | Set qty; save → Confirmed status; GORDR on SFTP |
-| Ship | New shipment; fill carrier + shipment number; select position; GDELR on SFTP |
-| RETP handling | Import RETP; return request tab; reason + amount + SKU visible; reject requires reason |
-| Return rejection | Fill reason; save; GSURN on SFTP; tab read-only after reject |
-| Final | Order status check |
-
-#### ORDER 2 — Mixed CANP + Multi-Shipment + UAR Workflow (30 tests)
-
-| Phase | Tests |
-|---|---|
-| Discovery | Order found in overview |
-| Open | Delivery address; positions extracted |
-| CANP mixed | Import CANP; approve position 1 (partial qty); reject position 2; accept position 3 |
-| Save | Statuses: Cancelled / Rejected / Approved visible |
-| Confirm | Confirm all open positions; GORDR + GCANR on SFTP |
-| Split shipment | Shipment A — first 2 positions; carrier + shipment number; GDELR |
-| Letter shipment | Shipment B — remaining position; Letter parcel type (no shipment number required); GDELR |
-| Shipped status | Order becomes Shipped |
-| UAR (User-Accepted Return) | Register return for position 2; status → To confirm → Confirmed; GSURN; Returned visible |
-| Final | Order stays Shipped |
-
-#### ORDER 3 — Unknown SKU + Pre-ship RETP + Full Accept Workflow (30 tests)
-
-| Phase | Tests |
-|---|---|
-| Discovery | Notification; order in overview |
-| Open | Status = New; delivery address; positions extracted |
-| Unknown SKU | First position has Unknown status; only reject available for it |
-| Reject position 1 | Click reject → Cancelling → save → Cancelled by vendor; EOLN/GCANR on SFTP |
-| CANP | Import CANP; positions locked while pending; accept all 3 positions with quantities |
-| GCANR | GCANR on SFTP after acceptance |
-| Confirm | Confirm open positions; GORDR on SFTP |
-| RETP before shipped | Import RETP; accept button disabled/errors before shipped |
-| Ship all | New shipment with all positions; carrier + tracking; GDELR on SFTP |
-| RETP after shipped | Accept return for position 2 → Returned; GSURN on SFTP |
-| Cancel-only check | Position 1 (cancelled by vendor) — only cancel button available |
-| Final status | Final order status check |
-
----
-
-### 9.14 SFTP Upload POM
-
-**File:** `tests/sftp-upload-pom.spec.ts`
-**Test count:** 9
-
-Validates the SFTP connection and EDI upload/download functionality in isolation.
+**File:** `tests/14-split-shipment-pom.spec.ts`
+**Tests:** 3
+**Mode:** Serial
 
 | Test | Description |
 |---|---|
-| Connection and directory listing | Connects; lists both `partner2dg` and `dg2partner` directories |
-| Upload GORDR | Uploads order confirmation XML; verifies upload |
-| Upload GDELR | Uploads delivery confirmation XML |
-| Upload GCANR | Uploads cancellation response (accepted) |
-| Upload GSURN | Uploads return response (accepted) |
-| Upload GORDP | Seeds a test order via GORDP upload |
-| Upload GCANP | Simulates cancellation request |
-| Upload GRETP | Simulates return request |
-| Wait for platform response | Polls `dg2partner` for platform-generated response file |
-
-> All tests skip gracefully if `SFTP_HOST` environment variable is not set.
+| Step 1 | Partial quantity confirmation (split shipment setup) |
+| Step 2 | Add shipment for confirmed partial quantity |
+| Step 3 | Verify resulting split order status |
 
 ---
 
-## 10. Key Technical Decisions & Fixes
+### 15 — Profile
 
-### 10.1 Angular SPA — Sidebar navigation required
+**File:** `tests/15-profile-pom.spec.ts`
+**Tests:** 13
 
-**Problem:** Directly navigating via `page.goto(url)` causes Angular to render the component but not activate tabs. Inactive tab content is **not present in the DOM**.
-
-**Fix:** All navigation uses sidebar menu clicks (`NavigationPage`). Tab content is only asserted after explicitly clicking the tab.
-
-### 10.2 Angular autocomplete — `Escape` keypress after fill
-
-**Problem:** Angular autocomplete stores the selected value in component state, not in the raw DOM `input.value`. After `fill()`, the value appeared empty to Playwright assertions.
-
-**Fix:** `ProductFormPage.fillField()` for autocomplete fields sends `Escape` after `fill()` to commit the value:
-```typescript
-await input.fill(value);
-await this.page.waitForTimeout(500);
-await this.page.keyboard.press('Escape');
-await this.page.waitForTimeout(200);
-```
-
-### 10.3 Product Create — inactive tab body text assertion
-
-**Problem:** Step 12b (`fillMediaUrl`) navigates to the Media tab. When Steps 13/14 then checked `innerText()` for the provider key, they found only `"Product\nProduct Details\nOnline"` because the Master data tab was inactive and not rendered.
-
-**Fix:** Steps 13 and 14 now explicitly click `await productForm.clickTab('Master data')` before asserting body text.
-
-### 10.4 SFTP directory paths
-
-**Correct paths** (confirmed via FileZilla inspection of the staging SFTP server):
-- Upload (IN): `/uploads/stage/OrderData/Test/partner2dg`
-- Read (OUT): `/uploads/stage/OrderData/Test/dg2partner`
-
-Previous incorrect values (`/incoming`, `/outgoing`) caused SFTP file-not-found errors.
-
-### 10.5 Dynamic order discovery — no hardcoded IDs or SKUs
-
-**Problem:** Earlier versions hardcoded `ORDER_1 = '61830301'` etc. and SKUs like `BT-SPK-001`. When those specific orders didn't exist in staging, all related tests were skipped.
-
-**Fix:** The suite now:
-1. Calls `discoverOrders(3)` in `beforeAll` to find whatever orders exist in staging
-2. Calls `extractPositions()` on the open order to read real SKUs at runtime
-3. Uses `sftpPat(type, orderId)` for dynamic SFTP file patterns
-
-### 10.6 SFTP graceful skip
-
-All SFTP operations check `if (!sftp)` before attempting connections. If `SFTP_HOST` is not configured, tests log a skip message and continue — no crash.
-
-### 10.7 `dotenv` in `playwright.config.ts`
-
-Added `import * as dotenv from 'dotenv'; dotenv.config()` at the top of `playwright.config.ts` so `.env` values are available to all tests when running locally without a CI environment.
+| Group | Tests |
+|---|---|
+| Positive | Profile dropdown opens with all expected menu items |
+| Positive | User settings panel opens |
+| Positive | User settings panel closes via close button |
+| Positive | Switch theme to Bright changes visual theme |
+| Positive | Switch theme back to Default |
+| Positive | Reload navigation menus keeps app functional |
+| Positive | Logout shows session-ended message, returns to login |
+| Negative | After logout, protected URL redirects to login |
+| Negative | Session re-established after fresh login |
+| Negative | Dropdown closes when clicking outside |
+| Negative | Closing User settings without changes preserves state |
+| Negative | Bright theme switch does not break page layout |
+| Negative | Reload navigation menus does not corrupt the menu |
 
 ---
 
-## 11. EDI Message Reference
+### 16 — Product Delete
 
-| Message | Direction | Trigger | Description |
-|---|---|---|---|
-| GORDP | Platform → Supplier | New customer order | Order placement |
-| GORDR | Supplier → Platform | Supplier confirms order | Order acceptance / confirmation |
-| GDELR | Supplier → Platform | Supplier ships | Delivery / shipment confirmation |
-| GCANP | Platform → Supplier | Customer cancellation request | Platform notifies supplier |
-| GCANR | Supplier → Platform | Supplier responds to GCANP | Accept or reject the cancellation |
-| GRETP | Platform → Supplier | Customer return request | Platform notifies supplier |
-| GSURN | Supplier → Platform | Supplier responds to GRETP | Accept or reject the return |
+**File:** `tests/16-product-delete-pom.spec.ts`
+**Tests:** 11
 
-### Order & Position Status Flow
+| Test | Description |
+|---|---|
+| Single Delete 1 | Delete a Stage 1 product |
+| Single Delete 2 | Delete a Stage 2 product |
+| Single Delete 3 | Delete a product with Error status |
+| Single Delete 4 | Cancel deletion — product remains |
+| Bulk Delete 1 | Select all → delete all |
+| Bulk Delete 2 | Select 3 specific → delete 3 |
+| Bulk Delete 3 | Select multiple → cancel → all remain |
+| Edge Case 1 | Delete without selection — no crash |
+| Edge Case 2 | Count decreases by correct amount |
+| Edge Case 3 | Deleted product does not reappear |
+| Final | Verify product list after all deletions |
+
+---
+
+### 17 — Admin Cleanup
+
+**File:** `tests/17-admin-cleanup-pom.spec.ts`
+**Tests:** 4
+**Mode:** Serial
+**Target:** Lobster admin panel at `stage.sellon.ch/`
+
+Logs in to the Lobster admin panel (separate credentials from supplier portal), then deletes fixture orders and EDI messages created by tests 10 and 11. Safety-gated to company 351 / supplier 223344 — rows not matching these IDs are skipped.
+
+| Test | Description |
+|---|---|
+| Login to admin panel | Navigates to admin URL, logs in with `ADMIN_USERNAME`/`ADMIN_PASSWORD`, waits for Lobster app shell |
+| Delete fixture orders | Opens Orders grid via global search (CMD+Shift+F), filters by each fixture order ID, verifies supplier/company match, deletes |
+| Delete EDI messages | Opens EdiMessageQueue grid, filters by `SUPPLIER_ID=223344` in `fileName` column, deletes matching rows |
+| Logout | Closes admin session |
+
+**How admin search works:**
+The Lobster global search (CMD+Shift+F) renders results as `div.menu-item` elements in a left sidebar panel. Each item has `span.label` and `span.hint`. Navigation happens by clicking the `div.open > a` link inside the matching item. `pressSequentially()` is used because `fill()` does not trigger Lobster's autocomplete.
+
+**Order ID source:**
+The test reads order IDs from the `fixtures/GORDP_*.xml` files at runtime using `parseGordpXml()` — no hardcoded IDs.
+
+---
+
+## 10. EDI Message Reference
+
+| Message | Direction | Trigger |
+|---|---|---|
+| GORDP | Platform → Supplier | New customer order placed |
+| GORDR | Supplier → Platform | Supplier confirms (accepts) the order |
+| GDELR | Supplier → Platform | Supplier ships — delivery confirmation |
+| GCANP | Platform → Supplier | Customer requests cancellation |
+| GCANR | Supplier → Platform | Supplier responds to cancellation request |
+| GRETP | Platform → Supplier | Customer requests return |
+| GSURN | Supplier → Platform | Supplier responds to return request |
+
+### Order status flow
 
 ```
-Order:      New → Open → Confirmed → Shipped → Closed
-Position:   To confirm → Confirmed → Shipped → Returned
-                                   → Cancelling → Cancelled
+Order:    New → Open → Confirmed → Shipped → Closed
+Position: To confirm → Confirmed → Shipped → Returned
+                                 ↘ Cancelling → Cancelled
 ```
 
 ---
 
-## 12. Seeding Test Orders
+## 11. GitLab CI/CD Pipeline
 
-When no suitable orders exist in staging, run the seed script to create them:
+**File:** `.gitlab-ci.yml`
+**Registry:** `git.w-4.ch/ashoaib/sellon-tests`
+**Runner tag:** `kasm_docker`
+**Image:** `debian:trixie`
 
-```bash
-npx tsx scripts/seed-orders.ts
-```
+### Triggers
 
-**What it does:**
-1. Connects to SFTP
-2. Builds GORDP XML for 3 orders with delivery address (Test Buyer, Bahnhofstrasse 1, Zurich 8001, CH)
-3. Uploads each GORDP to `/uploads/stage/OrderData/Test/dg2partner`
-4. The Sellon platform picks up the files and creates the orders in the staging database
+- Push to `main`
+- Manual web trigger
+- Scheduled pipeline
 
-**Wait:** 30–60 seconds after upload before running order-workflow tests.
+### `before_script` (runs for every job)
 
-> The order-workflow tests no longer depend on these specific seeded orders — `discoverOrders()` will use whatever orders it finds in the staging list.
+1. Install system dependencies (Chromium system libs)
+2. Install nvm + Node.js v20
+3. `npm ci`
+4. `npx playwright install-deps chromium`
+5. `npx playwright install chromium`
+
+### Artifacts (retained 14 days)
+
+- `screenshots/`
+- `playwright-report/`
+
+### Jobs
+
+| Job name | Test file | Notes |
+|---|---|---|
+| `login` | 01-login-pom.spec.ts | |
+| `dashboard` | 02-dashboard-pom.spec.ts | |
+| `product-create` | 03-product-create-pom.spec.ts | |
+| `product-edit` | 04-product-edit-pom.spec.ts | |
+| `product-filters` | 05-product-filters-pom.spec.ts | |
+| `product-validations` | 06-product-validations-pom.spec.ts | |
+| `product-import` | 07-product-import-pom.spec.ts | |
+| `stock-import` | 08-stock-import-pom.spec.ts | |
+| `export` | 09-export-pom.spec.ts | |
+| `sftp-upload` | 10-sftp-upload-pom.spec.ts | |
+| `order-workflow` | 11-order-workflow-pom.spec.ts | `timeout: 90 minutes` |
+| `orders` | 12-orders-pom.spec.ts | |
+| `orders-filters` | 13-orders-filters-pom.spec.ts | |
+| `product-delete` | 16-product-delete-pom.spec.ts | |
+
+> **Note:** Tests 14 (split-shipment), 15 (profile), and 17 (admin-cleanup) are not yet wired up in `.gitlab-ci.yml`. Add them using the `.test-template` extends pattern.
 
 ---
 
-*Last updated: 2026-06-11*
-*Maintained by: Aamna Shoaib / ESC Team*
+## 12. Key Technical Notes
+
+### Lobster SPA slow load
+
+The portal takes 30–120 seconds to render the login form on a cold start. All page objects use a retry loop + broad CSS selector wait (`input[type="text"], input[type="password"]`) before trying named role locators. Do not reduce `navigationTimeout` below 120s.
+
+### `pressSequentially()` required — not `fill()`
+
+`fill()` bypasses keyboard events. Lobster's autocomplete and form validation require real keystrokes. All credential and form inputs use `pressSequentially(value, { delay: 150 })`.
+
+### Admin login `loginwindow` overlay
+
+The Lobster admin shows a `<loginwindow>` custom element that overlays the entire UI until fully hidden. All admin interactions wait for `loginwindow` hidden before proceeding.
+
+### Serial mode and browser context
+
+Most suites use `test.describe.configure({ mode: 'serial' })` to run tests in order within a file. Each test file creates its own browser context — there is no shared auth state across files. Tests 17 (admin) and some others use `chromium.launch()` directly, which means the global Playwright `storageState` setting does not apply.
+
+### Column index detection
+
+Several test suites (11, 13, 17) detect column indices by scanning `thead tr th` inner texts rather than hardcoding positions. This makes tests resilient to column reordering. The `findIndex` uses anchored regexes (e.g. `/^order.?num/i`) to avoid false matches on similarly-named columns.
+
+### Admin safety gate
+
+Test 17 only deletes rows where the row text contains company ID `351` or supplier ID `223344`. Any row not matching is logged and skipped. This prevents accidentally deleting orders belonging to other companies in the shared staging environment.
+
+### Fixture order IDs
+
+The fixture XML files use supplier ID `223344`. Order IDs are parsed at test runtime from the XML files using `parseGordpXml()` — no hardcoded IDs in the test code.
+
+---
+
+*Last updated: 2026-06-22*
+*Maintained by: Aamna Shoaib / ESC Team — team-esc@w-4.com*

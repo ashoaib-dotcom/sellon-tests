@@ -117,3 +117,19 @@ product-delete:
   extends: .test-template
   variables:
     TEST_FILE: tests/16-product-delete-pom.spec.ts
+
+split-shipment:
+  extends: .test-template
+  variables:
+    TEST_FILE: tests/14-split-shipment-pom.spec.ts
+
+profile:
+  extends: .test-template
+  variables:
+    TEST_FILE: tests/15-profile-pom.spec.ts
+
+admin-cleanup:
+  extends: .test-template
+  timeout: 15 minutes
+  variables:
+    TEST_FILE: tests/17-admin-cleanup-pom.spec.ts
