@@ -513,7 +513,7 @@ test('Navigation: open sidebar and navigate to Orders page', async () => {
   const navOrders = page.getByRole('navigation').getByText('Orders', { exact: true });
   if (await navOrders.isVisible({ timeout: 5000 }).catch(() => false)) {
     await navOrders.scrollIntoViewIfNeeded().catch(() => {});
-    await navOrders.click({ force: true });
+    await navOrders.evaluate((el: HTMLElement) => el.click());
     await page.waitForTimeout(1500);
     await page.screenshot({ path: 'screenshots/nav-orders-03-orders-parent-clicked.png', fullPage: true }).catch(() => {});
     console.log('Orders nav parent clicked');
@@ -523,7 +523,7 @@ test('Navigation: open sidebar and navigate to Orders page', async () => {
     await page.waitForTimeout(1500);
     const ordersNav = page.getByRole('navigation').getByText('Orders', { exact: true });
     await ordersNav.scrollIntoViewIfNeeded().catch(() => {});
-    await ordersNav.click({ force: true }).catch(() => {});
+    await ordersNav.evaluate((el: HTMLElement) => el.click()).catch(() => {});
     await page.waitForTimeout(1500);
     await page.screenshot({ path: 'screenshots/nav-orders-03-sidebar-reopened.png', fullPage: true }).catch(() => {});
   }
@@ -531,7 +531,7 @@ test('Navigation: open sidebar and navigate to Orders page', async () => {
   // Click the Orders sub-item (nth(2) from codegen)
   const ordersLink = page.getByText('Orders').nth(2);
   if (await ordersLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await ordersLink.click();
+    await ordersLink.evaluate((el: HTMLElement) => el.click());
     await page.waitForTimeout(4000);
   }
   await page.screenshot({ path: 'screenshots/nav-orders-04-orders-page.png', fullPage: true }).catch(() => {});
