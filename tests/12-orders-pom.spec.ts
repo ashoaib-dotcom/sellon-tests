@@ -34,7 +34,7 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: 'serial' });
 
-test('Orders: should navigate to Orders page', async () => {
+test('Orders: should navigate to Orders page @regression', async () => {
   test.setTimeout(120000);
   await ordersPage.navigateToOrders();
   await ordersPage.screenshot('pom-orders-page');
@@ -45,7 +45,7 @@ test('Orders: should navigate to Orders page', async () => {
   console.log('ORDERS NAVIGATION PASSED');
 });
 
-test('Orders: should display order data', async () => {
+test('Orders: should display order data @regression', async () => {
   test.setTimeout(60000);
 
   try {

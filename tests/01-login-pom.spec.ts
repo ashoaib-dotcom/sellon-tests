@@ -24,7 +24,7 @@ async function setupBrowser() {
   loginPage = new LoginPage(page);
 }
 
-test('POM Login: valid credentials should reach dashboard', async () => {
+test('POM Login: valid credentials should reach dashboard @regression', async () => {
   test.setTimeout(300000);
   await setupBrowser();
 

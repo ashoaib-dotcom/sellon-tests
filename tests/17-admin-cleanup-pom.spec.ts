@@ -346,6 +346,7 @@ test('Admin: delete fixture orders from Orders tab (supplier 223344 only)', asyn
       const filtered = await setColumnFilter(orderNumColIdx, orderId);
       if (filtered) {
         await clickSearch();
+        await page.waitForTimeout(2000); // wait for grid to re-render after filter
         await ss(`04-filtered-${orderId}`);
       }
     }
@@ -458,6 +459,7 @@ test('Admin: delete EDI messages from EdiMessageQueue (supplier 223344 only)', a
   const filtered = await setColumnFilter(filterColIdx, SUPPLIER_ID);
   if (filtered) {
     await clickSearch();
+    await page.waitForTimeout(2000); // wait for grid to re-render after filter
   }
   await ss('11-edi-filtered');
 

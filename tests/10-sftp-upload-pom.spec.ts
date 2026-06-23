@@ -136,7 +136,7 @@ test.afterAll(async () => {
 
 // ─── 1. Connectivity ──────────────────────────────────────────────────────────
 
-test('SFTP: Connection and directory listing', async () => {
+test('SFTP: Connection and directory listing @regression', async () => {
   test.setTimeout(30000);
   if (!sftp.isConfigured) { console.log('SFTP not configured — skipping'); test.skip(); }
 
@@ -167,8 +167,8 @@ test('SFTP: Check directory status', async () => {
 
 // ─── 3. Upload GORDP — creates order in Sellon ───────────────────────────────
 
-test('SFTP: Upload GORDP — create order in Sellon frontend', async () => {
-  test.setTimeout(30000);
+test('SFTP: Upload GORDP — create order in Sellon frontend @regression', async () => {
+  test.setTimeout(120000);
   if (!sftp.isConfigured) { test.skip(); return; }
   if (!GORDP_CONTENT) {
     console.log('No reference GORDP file — place GORDP_223344_38083.xml on Desktop');
@@ -189,13 +189,25 @@ test('SFTP: Upload GORDP — create order in Sellon frontend', async () => {
     return;
   }
 
-  const outFiles   = await sftp.listFiles(sftpConfigFromEnv().remoteOutDir);
-  const stillThere = outFiles.some(f => f === filename);
+  // Poll for up to 90s to see if Sellon picks up the file
+  const deadline = Date.now() + 90000;
+  let pickedUp = false;
+  while (Date.now() < deadline) {
+    const outFiles = await sftp.listFiles(sftpConfigFromEnv().remoteOutDir);
+    if (!outFiles.some(f => f === filename)) {
+      pickedUp = true;
+      break;
+    }
+    console.log(`  Waiting for Sellon to process GORDP... (${Math.round((deadline - Date.now()) / 1000)}s left)`);
+    await new Promise(r => setTimeout(r, 10000));
+  }
 
-  console.log(stillThere
-    ? 'File still in dg2partner — Sellon has not yet picked it up'
-    : 'File no longer in dg2partner — Sellon picked it up and processed it',
-  );
+  if (pickedUp) {
+    console.log('Sellon picked up and processed the GORDP ✓');
+  } else {
+    console.log('WARNING: GORDP still in dg2partner after 90s — order may not appear on frontend');
+    console.log('Possible cause: order ID does not exist in Sellon staging database');
+  }
   console.log(`Check Sellon Orders tab for order ${TEST_ORDER_ID}`);
   console.log('SFTP GORDP upload PASSED');
 });

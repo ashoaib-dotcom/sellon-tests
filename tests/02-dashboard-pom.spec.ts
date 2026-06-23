@@ -59,7 +59,7 @@ test.describe.configure({ mode: 'serial' });
 // DASHBOARD: ALL 7 SECTIONS
 // ==========================================
 
-test('Dashboard: should display all 7 sections', async () => {
+test('Dashboard: should display all 7 sections @regression', async () => {
   test.setTimeout(120000);
   await dashboardPage.expectAllSectionsVisible();
   await dashboardPage.screenshot('pom-dash-all-sections');
@@ -84,7 +84,7 @@ test('Dashboard: Products section should show total, complete, incomplete, inval
 // DASHBOARD: ORDERS SECTION
 // ==========================================
 
-test('Dashboard: Orders section should show total and new orders', async () => {
+test('Dashboard: Orders section should show total and new orders @regression', async () => {
   test.setTimeout(60000);
   await dashboardPage.expectOrdersSectionVisible();
   const bodyText = await dashboardPage.getBodyText();
@@ -494,7 +494,7 @@ test('Products: TV icon changes layout — vertical and quarter options work', a
 // NAVIGATE TO ORDERS VIA SIDEBAR
 // ==========================================
 
-test('Navigation: open sidebar and navigate to Orders page', async () => {
+test('Navigation: open sidebar and navigate to Orders page @regression', async () => {
   test.setTimeout(120000);
 
   // Return to home / close any open panel

@@ -1,6 +1,5 @@
 stages:
   - test
-  - order-workflow
 
 # Shell executor runner — install Node.js via nvm if not already present
 default:
@@ -105,7 +104,6 @@ product-validations:
 
 order-workflow:
   extends: .test-template
-  stage: order-workflow
   timeout: 90 minutes
   variables:
     TEST_FILE: tests/11-order-workflow-pom.spec.ts
@@ -136,3 +134,12 @@ admin-cleanup:
   needs: [sftp-upload]
   variables:
     TEST_FILE: tests/17-admin-cleanup-pom.spec.ts
+
+regression:
+  extends: .test-template
+  timeout: 30 minutes
+  script:
+    - mkdir -p screenshots
+    - npx playwright test tests/01-login-pom.spec.ts tests/02-dashboard-pom.spec.ts tests/10-sftp-upload-pom.spec.ts tests/11-order-workflow-pom.spec.ts tests/12-orders-pom.spec.ts --grep "@regression" --reporter=html,list
+  variables:
+    TEST_FILE: ""

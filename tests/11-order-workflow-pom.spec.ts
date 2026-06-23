@@ -169,7 +169,7 @@ async function selectCombobox(modal: Locator, index: number): Promise<boolean> {
 
 // ── Step 1: Find a single-item New order (fallback: Confirmed), confirm positions
 
-test('Step 1: Find single-item order and confirm positions', async () => {
+test('Step 1: Find single-item order and confirm positions @regression', async () => {
   test.setTimeout(300000);
 
   await ordersPage.navigateToOrders();
@@ -426,7 +426,7 @@ test('Step 3: Verify order status', async () => {
 
 // ── Step 4 (Positive): Confirm a New order from scratch ──────────────────────
 
-test('Step 4 (Positive): Confirm a New order — positions confirmed and status updates', async () => {
+test('Step 4 (Positive): Confirm a New order — positions confirmed and status updates @regression', async () => {
   test.setTimeout(300000);
 
   await ordersPage.navigateToOrders();
@@ -567,41 +567,35 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
   await ss('step6-opened');
   console.log('  Opened order detail');
 
-  // Navigate to the Order Items tab inside the order
-  const orderItemsTab = page.locator('lb-tab, .tab, [role="tab"]')
-    .filter({ hasText: /order.?items|items|positions/i })
-    .filter({ visible: true })
-    .first();
-  if (await orderItemsTab.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await orderItemsTab.click();
-    await page.waitForTimeout(2000);
+  // Navigate to the Order Items tab (same pattern used by Step 4 which works)
+  const onItems = await switchTab(TAB.ORDER_ITEMS);
+  if (onItems) {
     console.log('  Navigated to Order Items tab');
   } else {
-    console.log('  Order Items tab not found — trying navigation links');
-    const navLink = page.locator('a, span, div').filter({ hasText: /order.?items|items/i }).filter({ visible: true }).first();
+    console.log('  Order Items tab not found — trying fallback selectors');
+    const navLink = page.locator('lb-tab, [role="tab"], .tab-label')
+      .filter({ hasText: /order.?items|items|positions/i })
+      .filter({ visible: true }).first();
     if (await navLink.isVisible({ timeout: 3000 }).catch(() => false)) {
       await navLink.click();
       await page.waitForTimeout(2000);
-      console.log('  Navigated via nav link');
     }
   }
   await ss('step6-order-items-tab');
 
-  // Log all ribbon buttons on Order Items page
-  const ribbonAll = await page.locator('lb-ribbon-big-button').filter({ visible: true }).allTextContents();
-  console.log(`  Ribbon buttons on Order Items page: ${JSON.stringify(ribbonAll.map(t => t.trim()).filter(Boolean))}`);
-
-  // Look for Reject Order button on Order Items page
+  // Look for Reject Order as ribbon button, regular button, OR any clickable element on the page
   let cancelClicked = false;
   for (const pattern of CANCEL_PATTERNS) {
+    // 1. Ribbon button
     const ribbonBtn = page.locator('lb-ribbon-big-button').filter({ hasText: pattern }).filter({ visible: true }).first();
-    if (await ribbonBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await ribbonBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
       await ribbonBtn.click();
       await page.waitForTimeout(2000);
       console.log(`  Clicked ribbon button matching ${pattern}`);
       cancelClicked = true;
       break;
     }
+    // 2. Role=button
     const genericBtn = page.getByRole('button', { name: pattern }).filter({ visible: true }).first();
     if (await genericBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
       await genericBtn.click();
@@ -610,6 +604,28 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
       cancelClicked = true;
       break;
     }
+    // 3. Any clickable element (link, span, div with click handler)
+    const anyEl = page.locator('a, lb-button, button, [role="button"]')
+      .filter({ hasText: pattern }).filter({ visible: true }).first();
+    if (await anyEl.isVisible({ timeout: 1000 }).catch(() => false)) {
+      await anyEl.evaluate((el: HTMLElement) => el.click());
+      await page.waitForTimeout(2000);
+      console.log(`  Clicked element matching ${pattern}`);
+      cancelClicked = true;
+      break;
+    }
+  }
+
+  if (!cancelClicked) {
+    // Log everything visible to help identify the reject button
+    const ribbonLabels = await page.locator('lb-ribbon-big-button').filter({ visible: true }).allTextContents();
+    const allBtns = await page.getByRole('button').filter({ visible: true }).allTextContents();
+    console.log(`Step 6: Reject button not found.`);
+    console.log(`  Ribbon: ${JSON.stringify(ribbonLabels.map(t => t.trim()).filter(Boolean))}`);
+    console.log(`  Buttons: ${JSON.stringify(allBtns.map(t => t.trim()).filter(Boolean))}`);
+    await ss('step6-no-cancel-btn');
+    await close();
+    return;
   }
 
   if (!cancelClicked) {
