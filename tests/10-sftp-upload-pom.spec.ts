@@ -55,6 +55,7 @@ let sftp: SftpHelper;
 let TEST_ORDER_ID:     string        = '';
 let ORDER_POSITIONS:   EdiPosition[] = [];
 let GORDP_CONTENT:     string        = '';  // reference file content, uploaded verbatim
+let EXTRA_GORDPS:      { content: string; orderId: string }[] = [];  // additional fixtures to seed for order-workflow
 let CARRIER:           string        = '';
 let SHIPMENT_REF:      string        = '';
 let CANCEL_REASON:     string        = '';
@@ -93,15 +94,21 @@ test.beforeAll(async () => {
     const parsed = parseGordpXml(raw);
     if (!parsed) continue;
 
-    GORDP_CONTENT   = raw;
-    TEST_ORDER_ID   = parsed.orderId;
-    ORDER_POSITIONS = parsed.positions;
-    console.log(`[Setup] GORDP: ${path.basename(refPath)}`);
-    console.log(`[Setup] Order ${TEST_ORDER_ID} | ${ORDER_POSITIONS.length} product(s)`);
-    ORDER_POSITIONS.forEach(p =>
-      console.log(`  ${p.sku} x${p.qty} @CHF${p.price}  gtin=${p.gtin}  buyerPid=${p.buyerPid}`),
-    );
-    break;
+    if (!GORDP_CONTENT) {
+      // Primary fixture — drives the full SFTP workflow test
+      GORDP_CONTENT   = raw;
+      TEST_ORDER_ID   = parsed.orderId;
+      ORDER_POSITIONS = parsed.positions;
+      console.log(`[Setup] GORDP (primary): ${path.basename(refPath)}`);
+      console.log(`[Setup] Order ${TEST_ORDER_ID} | ${ORDER_POSITIONS.length} product(s)`);
+      ORDER_POSITIONS.forEach(p =>
+        console.log(`  ${p.sku} x${p.qty} @CHF${p.price}  gtin=${p.gtin}  buyerPid=${p.buyerPid}`),
+      );
+    } else {
+      // Extra fixtures — uploaded as seed orders so order-workflow Step 6 has a second New order
+      EXTRA_GORDPS.push({ content: raw, orderId: parsed.orderId });
+      console.log(`[Setup] GORDP (extra seed): ${path.basename(refPath)} → order ${parsed.orderId}`);
+    }
   }
 
   if (!TEST_ORDER_ID) {
@@ -209,6 +216,28 @@ test('SFTP: Upload GORDP — create order in Sellon frontend @regression', async
     console.log('Possible cause: order ID does not exist in Sellon staging database');
   }
   console.log(`Check Sellon Orders tab for order ${TEST_ORDER_ID}`);
+
+  // Upload any extra fixture GORDPs so order-workflow Step 6 has a second New order to reject
+  for (const extra of EXTRA_GORDPS) {
+    const extraFilename = `GORDP_${suppId}_${extra.orderId}_${Date.now()}.xml`;
+    console.log(`Uploading extra seed GORDP for order ${extra.orderId}...`);
+    const extraOk = await sftp.uploadToOutDir(extra.content, extraFilename);
+    if (!extraOk) {
+      console.log(`  Extra upload failed for order ${extra.orderId} — skipping`);
+      continue;
+    }
+    // Wait up to 30s for Sellon to pick it up
+    const extraDeadline = Date.now() + 30000;
+    while (Date.now() < extraDeadline) {
+      const outFiles = await sftp.listFiles(sftpConfigFromEnv().remoteOutDir);
+      if (!outFiles.some(f => f === extraFilename)) {
+        console.log(`  Extra seed order ${extra.orderId} picked up ✓`);
+        break;
+      }
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+
   console.log('SFTP GORDP upload PASSED');
 });
 

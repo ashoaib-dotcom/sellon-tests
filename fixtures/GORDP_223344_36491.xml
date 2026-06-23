@@ -11,7 +11,7 @@
         </CONTROL_INFO>
 
         <ORDER_INFO>
-            <ORDER_ID>61830310</ORDER_ID>
+            <ORDER_ID>61830312</ORDER_ID>
             <ORDER_DATE>2026-06-17T10:00:00</ORDER_DATE>
 
             <LANGUAGE xmlns="http://www.bmecat.org/bmecat/2005">ger</LANGUAGE>
@@ -83,7 +83,7 @@
             </PARTIES>
 
             <CUSTOMER_ORDER_REFERENCE>
-                <ORDER_ID>61830310</ORDER_ID>
+                <ORDER_ID>61830312</ORDER_ID>
             </CUSTOMER_ORDER_REFERENCE>
 
             <ORDER_PARTIES_REFERENCE>
@@ -107,9 +107,9 @@
         <ORDER_ITEM>
             <LINE_ITEM_ID>1</LINE_ITEM_ID>
             <PRODUCT_ID>
-                <SUPPLIER_PID type="supplierProductKey" xmlns="http://www.bmecat.org/bmecat/2005">DEMO-100</SUPPLIER_PID>
-                <INTERNATIONAL_PID type="gtin" xmlns="http://www.bmecat.org/bmecat/2005">7608998001002</INTERNATIONAL_PID>
-                <BUYER_PID type="DgProductId" xmlns="http://www.bmecat.org/bmecat/2005">38083</BUYER_PID>
+                <SUPPLIER_PID type="supplierProductKey" xmlns="http://www.bmecat.org/bmecat/2005">DEMO-048</SUPPLIER_PID>
+                <INTERNATIONAL_PID type="gtin" xmlns="http://www.bmecat.org/bmecat/2005">7609998000486</INTERNATIONAL_PID>
+                <BUYER_PID type="DgProductId" xmlns="http://www.bmecat.org/bmecat/2005">36491</BUYER_PID>
                 <DESCRIPTION_SHORT xmlns="http://www.bmecat.org/bmecat/2005">Navigationsreen Geschwinkeit Flasche Premium</DESCRIPTION_SHORT>
             </PRODUCT_ID>
             <QUANTITY>5</QUANTITY>

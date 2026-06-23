@@ -541,19 +541,30 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
 
   const idColIdx     = await ordersPage.findColumnIndex(COLUMN.ID);
   const statusColIdx = await ordersPage.findColumnIndex(COLUMN.STATUS);
-  const rows         = page.locator('tbody tr');
-  const rowCount     = await rows.count();
+
+  // Filter by New status so we only see New orders (avoids pagination hiding seed orders)
+  await ordersPage.setDropdownFilter(statusColIdx, ORDER_STATUS.NEW);
+  await page.waitForTimeout(2000);
+
+  const rows     = page.locator('tbody tr');
+  const rowCount = await rows.count();
+  console.log(`Step 6: New orders visible: ${rowCount}`);
 
   let cancelOrderId = '';
   for (let i = 0; i < rowCount; i++) {
     const id     = (await ordersPage.getCellText(i, idColIdx)).trim();
     const status = (await ordersPage.getCellText(i, statusColIdx)).trim();
+    console.log(`  Row ${i}: id="${id}" status="${status}"`);
     // Skip the order already processed by earlier steps
     if (id && status === ORDER_STATUS.NEW && id !== targetOrderId) { cancelOrderId = id; break; }
   }
 
+  // Clear filter
+  await ordersPage.clickClear();
+  await page.waitForTimeout(1500);
+
   if (!cancelOrderId) {
-    console.log('Step 6: No suitable New order found to cancel — skipping');
+    console.log(`Step 6: No suitable New order found to reject (targetOrderId=${targetOrderId}) — skipping`);
     return;
   }
 
