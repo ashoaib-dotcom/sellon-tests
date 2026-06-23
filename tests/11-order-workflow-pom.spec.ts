@@ -560,18 +560,45 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
   console.log(`Step 6: Cancelling order ${cancelOrderId}`);
   await ordersPage.setTextFilter(idColIdx, cancelOrderId);
   await page.waitForTimeout(1500);
-  await page.locator('tbody tr').first().dblclick();
-  await page.waitForTimeout(4000);
-  await ss('step6-opened');
 
-  // Look for cancel / reject button in ribbon or toolbar
+  // Open the order via double-click to enter the detail view
+  await page.locator('tbody tr').first().dblclick();
+  await page.waitForTimeout(3000);
+  await ss('step6-opened');
+  console.log('  Opened order detail');
+
+  // Navigate to the Order Items tab inside the order
+  const orderItemsTab = page.locator('lb-tab, .tab, [role="tab"]')
+    .filter({ hasText: /order.?items|items|positions/i })
+    .filter({ visible: true })
+    .first();
+  if (await orderItemsTab.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await orderItemsTab.click();
+    await page.waitForTimeout(2000);
+    console.log('  Navigated to Order Items tab');
+  } else {
+    console.log('  Order Items tab not found — trying navigation links');
+    const navLink = page.locator('a, span, div').filter({ hasText: /order.?items|items/i }).filter({ visible: true }).first();
+    if (await navLink.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await navLink.click();
+      await page.waitForTimeout(2000);
+      console.log('  Navigated via nav link');
+    }
+  }
+  await ss('step6-order-items-tab');
+
+  // Log all ribbon buttons on Order Items page
+  const ribbonAll = await page.locator('lb-ribbon-big-button').filter({ visible: true }).allTextContents();
+  console.log(`  Ribbon buttons on Order Items page: ${JSON.stringify(ribbonAll.map(t => t.trim()).filter(Boolean))}`);
+
+  // Look for Reject Order button on Order Items page
   let cancelClicked = false;
   for (const pattern of CANCEL_PATTERNS) {
     const ribbonBtn = page.locator('lb-ribbon-big-button').filter({ hasText: pattern }).filter({ visible: true }).first();
     if (await ribbonBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await ribbonBtn.click();
       await page.waitForTimeout(2000);
-      console.log(`  Clicked ribbon cancel button matching ${pattern}`);
+      console.log(`  Clicked ribbon button matching ${pattern}`);
       cancelClicked = true;
       break;
     }
@@ -594,15 +621,25 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
     return;
   }
 
+  // Log all visible buttons to diagnose confirmation dialog
+  await ss('step6-after-cancel-btn');
+  const allButtons = await page.getByRole('button').filter({ visible: true }).allTextContents();
+  console.log(`  Visible buttons after cancel click: ${JSON.stringify(allButtons.map(t => t.trim()).filter(Boolean))}`);
+
   // Confirm any "are you sure?" dialog
+  let confirmed = false;
   for (const confirmPattern of CONFIRM_PATTERNS) {
     const confirmBtn = page.getByRole('button', { name: confirmPattern }).filter({ visible: true }).first();
     if (await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await confirmBtn.click();
       await page.waitForTimeout(2000);
       console.log(`  Confirmed dialog with "${confirmPattern}"`);
+      confirmed = true;
       break;
     }
+  }
+  if (!confirmed) {
+    console.log('  WARNING: No confirmation dialog matched — cancel may not have completed');
   }
 
   await ss('step6-after-cancel');

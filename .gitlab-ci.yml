@@ -1,5 +1,6 @@
 stages:
   - test
+  - order-workflow
 
 # Shell executor runner — install Node.js via nvm if not already present
 default:
@@ -104,6 +105,7 @@ product-validations:
 
 order-workflow:
   extends: .test-template
+  stage: order-workflow
   timeout: 90 minutes
   variables:
     TEST_FILE: tests/11-order-workflow-pom.spec.ts
