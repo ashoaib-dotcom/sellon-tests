@@ -115,8 +115,24 @@ export class AdminPage {
   }
 
   async searchAndOpen(term: string, exactLabel: string): Promise<boolean> {
-    const searchBox = this.page.getByRole('textbox', { name: /CMD.*Shift.*F/i });
-    const appeared = await searchBox.waitFor({ state: 'visible', timeout: 10000 }).then(() => true).catch(() => false);
+    // Placeholder varies by OS: "CMD+Shift+F" on Mac, "Ctrl+Shift+F" on Linux/Windows CI
+    const candidates = [
+      () => this.page.getByRole('textbox', { name: /CMD.*Shift.*F/i }),
+      () => this.page.getByRole('textbox', { name: /Ctrl.*Shift.*F/i }),
+      () => this.page.locator('input[placeholder*="Shift" i]').filter({ visible: true }).first(),
+      () => this.page.locator('[class*="search"] input, .search-bar input').filter({ visible: true }).first(),
+      () => this.page.getByRole('textbox').filter({ visible: true }).first(),
+    ];
+    let searchBox = candidates[0]();
+    let appeared = false;
+    for (const getCandidate of candidates) {
+      const candidate = getCandidate();
+      if (await candidate.isVisible({ timeout: 3000 }).catch(() => false)) {
+        searchBox = candidate;
+        appeared = true;
+        break;
+      }
+    }
     if (!appeared) {
       console.log('[Admin] Search bar textbox did not appear — skipping');
       return false;

@@ -4,6 +4,7 @@ export class NavigationPage {
   constructor(private page: Page) {}
 
   async openSidebar() {
+    await this.page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 30000 });
     await this.page.locator('.menu-icon').click();
     await this.page.waitForTimeout(2000);
   }
@@ -54,6 +55,7 @@ export class NavigationPage {
     } catch {}
 
     // Open sidebar
+    await this.page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 30000 });
     await this.page.locator('.menu-icon').click();
     await this.page.waitForTimeout(2000);
 
@@ -79,6 +81,7 @@ export class NavigationPage {
     } catch {}
 
     // Open sidebar
+    await this.page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 30000 });
     await this.page.locator('.menu-icon').click();
     await this.page.waitForTimeout(2000);
 
@@ -126,6 +129,7 @@ export class NavigationPage {
     } catch {}
 
     // Open sidebar
+    await this.page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 30000 });
     await this.page.locator('.menu-icon').click();
     await this.page.waitForTimeout(2000);
 

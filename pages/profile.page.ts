@@ -8,11 +8,6 @@ const PROFILE_LABEL = 'AashoaibVendor, Aamnas Company';
 export class ProfilePage extends BasePage {
   // ── Locators ──────────────────────────────────────────────────────────────
 
-  /** The button in the top nav that opens the profile dropdown. */
-  private get profileButton() {
-    return this.page.getByText(PROFILE_LABEL).first();
-  }
-
   /** "User settings" item inside the open dropdown. */
   private get userSettingsItem() {
     return this.page.getByText('User settings', { exact: false }).filter({ visible: true }).first();
@@ -61,8 +56,12 @@ export class ProfilePage extends BasePage {
    * Wait for the profile button to be visible and click it to open the dropdown.
    */
   async openProfileDropdown(): Promise<void> {
-    await this.profileButton.waitFor({ state: 'visible', timeout: 15000 });
-    await this.profileButton.click();
+    // Prefer the text-matched button; if not found within 5s, fall through to the positional fallback
+    const byText = this.page.getByText(PROFILE_LABEL, { exact: false }).first();
+    const byPos  = this.page.locator('.menubar-item').last();
+    const btn = (await byText.isVisible({ timeout: 5000 }).catch(() => false)) ? byText : byPos;
+    await btn.waitFor({ state: 'visible', timeout: 15000 });
+    await btn.click();
     await this.page.waitForTimeout(800);
   }
 

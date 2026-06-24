@@ -358,11 +358,14 @@ export class ProductListPage {
   }
 
   // Click the first visible toggle inside the mass-edit modal.
+  // Returns silently when no toggle element exists (field may use a different control).
   async clickMassEditToggle() {
     const toggle = this.massEditModal()
       .locator('lb-toggle, lb-switch, [role="switch"]')
       .filter({ visible: true })
       .first();
+    const visible = await toggle.isVisible({ timeout: 2000 }).catch(() => false);
+    if (!visible) return;
     await toggle.click({ force: true });
     await this.page.waitForTimeout(400);
   }

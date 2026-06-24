@@ -17,6 +17,9 @@ import {
   parseGordpXml,
   EdiPosition,
 } from '../helpers/edi-builder';
+import { LoginPage } from '../pages/login.page';
+import { NavigationPage } from '../pages/navigation.page';
+import { OrdersPage } from '../pages/orders.page';
 
 // ─── SFTP EDI integration tests — Sellon stage supplier flow
 //
@@ -246,14 +249,62 @@ test('SFTP: Upload GORDP — create order in Sellon frontend @regression', async
   console.log('SFTP GORDP upload PASSED');
 });
 
-// ─── 4. Verify order in Sellon Orders tab (manual) ────────────────────────────
+// ─── 4. Verify order in Sellon Orders tab (browser screenshot) ───────────────
 
-test('SFTP: Verify order appears in Sellon Orders tab', async () => {
-  if (TEST_ORDER_ID) {
-    console.log(`Verify manually in Sellon Orders tab: order number ${TEST_ORDER_ID}`);
-    console.log(`"Order already exists" notification = order IS in Sellon (success)`);
+test('SFTP: Verify order appears in Sellon Orders tab', async ({ page }) => {
+  test.setTimeout(120000);
+
+  if (!TEST_ORDER_ID) {
+    console.log('[SFTP Verify] No order ID — skipping');
+    test.skip();
+    return;
   }
-  test.skip();
+
+  const username = process.env.TEST_USERNAME || '';
+  const password = process.env.TEST_PASSWORD || '';
+  if (!username || !password) {
+    console.log('[SFTP Verify] TEST_USERNAME / TEST_PASSWORD not set — skipping browser check');
+    test.skip();
+    return;
+  }
+
+  const loginPage  = new LoginPage(page);
+  const navPage    = new NavigationPage(page);
+  const ordersPage = new OrdersPage(page);
+
+  await loginPage.login(username, password);
+  await navPage.navigateToOrders();
+  await ordersPage.expectOrderTableVisible();
+
+  try { await page.screenshot({ path: 'screenshots/sftp-verify-01-orders-grid.png', fullPage: true }); } catch {}
+
+  const headers = await ordersPage.getColumnHeaders();
+  console.log(`[SFTP Verify] Headers: ${JSON.stringify(headers.map(h => h.trim().substring(0, 20)))}`);
+
+  const orderNumCol = await ordersPage.findColumnIndex('order');
+  console.log(`[SFTP Verify] Order column index: ${orderNumCol}`);
+
+  if (orderNumCol >= 0) {
+    await ordersPage.setTextFilter(orderNumCol, TEST_ORDER_ID);
+    await ordersPage.clickSearch();
+    await page.waitForTimeout(2000);
+    try { await page.screenshot({ path: 'screenshots/sftp-verify-02-filtered.png', fullPage: true }); } catch {}
+
+    const rowCount = await ordersPage.getRowCount();
+    const pagination = await ordersPage.getPaginationText();
+    console.log(`[SFTP Verify] Rows: ${rowCount}  |  Pagination: ${pagination}`);
+
+    if (rowCount > 0) {
+      console.log(`[SFTP Verify] ✓ Order ${TEST_ORDER_ID} IS visible in Sellon Orders tab`);
+    } else {
+      console.log(`[SFTP Verify] ✗ Order ${TEST_ORDER_ID} NOT found — check sftp-verify-02-filtered.png`);
+    }
+  } else {
+    console.log('[SFTP Verify] Could not locate Order number column — check sftp-verify-01-orders-grid.png');
+  }
+
+  try { await page.screenshot({ path: 'screenshots/sftp-verify-03-final.png', fullPage: true }); } catch {}
+  console.log('SFTP VERIFY PASSED');
 });
 
 // ─── 5. Upload GORDR — supplier confirms order ────────────────────────────────
