@@ -1,4 +1,4 @@
-import { test, expect, chromium, Page, Browser } from '@playwright/test';
+import { test, chromium, Page, Browser } from '@playwright/test';
 import { LoginPage } from '../pages/login.page';
 import { NavigationPage } from '../pages/navigation.page';
 import { ProductListPage } from '../pages/product-list.page';
@@ -74,13 +74,7 @@ test('Step 1: Click New to create product', async () => {
 
 test('Step 2: Verify empty form has all required tabs', async () => {
   test.setTimeout(60000);
-  await expect(page.getByText('GTIN', { exact: true })).toBeVisible();
-  await expect(page.getByText('Provider key', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Brand', { exact: true })).toBeVisible();
-  await expect(page.getByText('Master data', { exact: true })).toBeVisible();
-  await expect(page.getByText('Price & stock', { exact: true })).toBeVisible();
-  await expect(page.getByText('Media', { exact: true })).toBeVisible();
-  await expect(page.getByText('Galaxus', { exact: true })).toBeVisible();
+  await productForm.expectMasterDataFieldsVisible();
   console.log('STEP 2 PASSED');
 });
 
@@ -90,7 +84,7 @@ test('Step 2b: Save empty product — verify expected errors and warnings appear
   await productForm.clickSave();
   await page.waitForTimeout(5000);
 
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await productForm.getBodyText();
   const lower = bodyText.toLowerCase();
 
   // Expected ERRORS (red)
@@ -160,9 +154,7 @@ test('Step 8: Fill Weight and select Category', async () => {
 test('Step 9: Navigate to Price & stock tab', async () => {
   test.setTimeout(60000);
   await productForm.clickTab('Price & stock');
-  await expect(page.getByText('Selling price', { exact: true })).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText('VAT', { exact: true })).toBeVisible();
-  await expect(page.getByText('Stock quantity', { exact: true })).toBeVisible();
+  await productForm.expectPriceStockFieldsVisible();
   console.log('STEP 9 PASSED');
 });
 
@@ -308,7 +300,7 @@ test('Step 21 (Negative): Creating a product with an already-used GTIN is reject
   await productForm.clickSave();
   await page.waitForTimeout(3000);
 
-  const pageText = await page.locator('body').innerText();
+  const pageText = await productForm.getBodyText();
   const hasDupError =
     pageText.toLowerCase().includes('already exist') ||
     pageText.toLowerCase().includes('duplicate') ||

@@ -221,4 +221,46 @@ export class DashboardPage {
     await this.page.evaluate(() => window.scrollTo(0, 0));
     await this.page.waitForTimeout(2000);
   }
+
+  async getHeadings(): Promise<string[]> {
+    return this.page.getByRole('heading').allInnerTexts();
+  }
+
+  async isTVIconVisible(timeout = 8000): Promise<boolean> {
+    return this.page.locator('.fas.fa-tv').first().isVisible({ timeout }).catch(() => false);
+  }
+
+  async clickTVIconForce() {
+    await this.page.locator('.fas.fa-tv').first().click({ force: true, timeout: 5000 }).catch(() => {});
+    await this.page.waitForTimeout(1500);
+  }
+
+  async isExpandButtonVisible(timeout = 8000): Promise<boolean> {
+    return this.page.locator('.fas.fa-expand').first().isVisible({ timeout }).catch(() => false);
+  }
+
+  getFirstSlot() {
+    return this.page.locator('.slot').first();
+  }
+
+  getSlotRowSecondItem() {
+    return this.page.locator('.slot-row > div:nth-child(2)').first();
+  }
+
+  getVerticalSlotItem() {
+    return this.page.locator('.slot-row.v > div:nth-child(2)').first();
+  }
+
+  getQuarterSlotItem() {
+    return this.page.locator('.option-item.quarter > div').first();
+  }
+
+  getFirstMenubarItem() {
+    return this.page.locator('.menubar-item').first();
+  }
+
+  async clickFirstMenubarItem() {
+    await this.page.locator('.menubar-item').first().click();
+    await this.page.waitForTimeout(1000);
+  }
 }

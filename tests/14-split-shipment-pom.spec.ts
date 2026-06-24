@@ -103,7 +103,7 @@ test('Step 1: Partial quantity confirmation (split shipment setup)', async () =>
   await ss('split-step1-order-items-tab');
 
   // Inspect all visible inputs to identify the quantity field
-  const allInputs = page.locator('input').filter({ visible: true });
+  const allInputs = orderDetail.getVisibleInputs();
   const inputCount = await allInputs.count();
   console.log(`Visible inputs on Order items tab: ${inputCount}`);
   for (let i = 0; i < inputCount; i++) {
@@ -216,8 +216,8 @@ test('Step 2: Add shipment for confirmed partial quantity', async () => {
     if (onShippingTab) break;
   }
   if (!onShippingTab) {
-    const tabTexts = await page.locator('[role="tab"], .tab, lb-tab').filter({ visible: true }).allTextContents();
-    console.log(`Shipping tab not found. Available: ${JSON.stringify(tabTexts.map(t => t.trim()).filter(Boolean))}`);
+    const availableTabs = await orderDetail.getAvailableTabs();
+    console.log(`Shipping tab not found. Available: ${JSON.stringify(availableTabs)}`);
     await ss('split-step2-no-shipping-tab');
     return;
   }
@@ -259,7 +259,7 @@ test('Step 2: Add shipment for confirmed partial quantity', async () => {
   // Wait for modal to close, then save
   await orderDetail.waitForModalToClose();
 
-  if (!await page.locator('lb-modal').isVisible().catch(() => false)) {
+  if (!await orderDetail.isModalVisible()) {
     await save();
     await ss('split-step2-saved');
   } else {

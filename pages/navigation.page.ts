@@ -107,6 +107,14 @@ export class NavigationPage {
     await this.page.waitForTimeout(2000);
   }
 
+  getProductDetailsLink() {
+    return this.page.getByText('Product Details', { exact: true });
+  }
+
+  async getMenuItemTexts(): Promise<string[]> {
+    return this.page.locator('.menu-icon ~ *, nav a, nav .item').allInnerTexts().catch(() => []);
+  }
+
   async navigateToOrders() {
     // Dismiss any blocking modal
     try {

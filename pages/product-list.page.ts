@@ -581,6 +581,31 @@ export class ProductListPage {
     return false;
   }
 
+  // Return the locator for all visible .dropdown-item elements (used after opening a dropdown)
+  getDropdownItems() {
+    return this.page.locator('.dropdown-item').filter({ visible: true });
+  }
+
+  // Return a locator for a specific visible dropdown item by text
+  getDropdownItemByText(text: string) {
+    return this.page.locator(`.dropdown-item:has-text("${text}")`).filter({ visible: true }).first();
+  }
+
+  // Return the first visible table/grid element
+  getTable() {
+    return this.page.locator('table, [class*="grid"], [class*="table"]').first();
+  }
+
+  // Check whether the page body is still visible (page alive / no crash)
+  async isPageAlive(): Promise<boolean> {
+    return this.page.locator('body').isVisible().catch(() => false);
+  }
+
+  // Return a column header element by its title attribute
+  getColumnHeaderByTitle(title: string) {
+    return this.page.getByTitle(title, { exact: true });
+  }
+
   // Poll <body> text until a success/error keyword appears or the timeout expires.
   async waitForImportResult(timeoutMs = 120000): Promise<'success' | 'error' | 'timeout'> {
     const deadline = Date.now() + timeoutMs;

@@ -195,6 +195,25 @@ export class OrderDetailPage extends BasePage {
     await this.page.waitForTimeout(4000);
   }
 
+  /** Return a locator for all currently-visible input elements on the page. */
+  getVisibleInputs() {
+    return this.page.locator('input').filter({ visible: true });
+  }
+
+  /** Return true if lb-modal is currently visible on the page. */
+  async isModalVisible(): Promise<boolean> {
+    return this.page.locator('lb-modal').isVisible().catch(() => false);
+  }
+
+  /** Return text of all currently-visible tab labels. */
+  async getAvailableTabs(): Promise<string[]> {
+    const texts = await this.page
+      .locator('[role="tab"], .tab, lb-tab')
+      .filter({ visible: true })
+      .allTextContents();
+    return texts.map(t => t.trim()).filter(Boolean);
+  }
+
   /** Return `{ visible, disabled }` state of the "Create new shipment" ribbon button. */
   async getCreateShipmentButtonState(): Promise<{ visible: boolean; disabled: boolean }> {
     const btn = this.page

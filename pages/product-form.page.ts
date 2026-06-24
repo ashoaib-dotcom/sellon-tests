@@ -365,6 +365,39 @@ export class ProductFormPage {
     throw new Error(`Field with label "${labelText}" not found on the page`);
   }
 
+  // Return the raw body innerText
+  async getBodyText(): Promise<string> {
+    return this.page.locator('body').innerText();
+  }
+
+  // Assert that Master data tab labels are visible (form is open on that tab)
+  async expectMasterDataFieldsVisible(): Promise<void> {
+    for (const label of ['GTIN', 'Provider key', 'Brand', 'Master data', 'Price & stock', 'Media', 'Galaxus']) {
+      await expect(this.page.getByText(label, { exact: true }).first()).toBeVisible({ timeout: 10000 });
+    }
+  }
+
+  // Assert Price & stock tab field labels are visible
+  async expectPriceStockFieldsVisible(): Promise<void> {
+    for (const label of ['Selling price', 'VAT', 'Stock quantity']) {
+      await expect(this.page.getByText(label, { exact: true }).first()).toBeVisible({ timeout: 10000 });
+    }
+  }
+
+  // Check whether the Restock date input is disabled
+  async isRestockDateDisabled(): Promise<boolean> {
+    const inputs = this.page.locator('input').filter({ visible: true });
+    const count  = await inputs.count();
+    for (let i = 0; i < count; i++) {
+      const name        = (await inputs.nth(i).getAttribute('name').catch(() => '')) || '';
+      const placeholder = (await inputs.nth(i).getAttribute('placeholder').catch(() => '')) || '';
+      if ((name + placeholder).toLowerCase().includes('restock') && (name + placeholder).toLowerCase().includes('date')) {
+        return inputs.nth(i).isDisabled().catch(() => false);
+      }
+    }
+    return false;
+  }
+
   // Verify page body contains text — checks both visible text AND <input>/<textarea> values
   // because innerText() does not capture the value attribute of form fields.
   async expectBodyContains(text: string) {

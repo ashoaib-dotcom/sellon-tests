@@ -138,7 +138,7 @@ test('Provider key: should reject more than 50 characters', async () => {
   await productForm.fillField('Provider key', longKey);
   await productForm.clickSave();
 
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await productForm.getBodyText();
   console.log('Long provider key - has error:', bodyText.toLowerCase().includes('error') || bodyText.toLowerCase().includes('50'));
 
   try { await page.screenshot({ path: 'screenshots/pom-val-provider-long.png', fullPage: true, timeout: 5000 }); } catch {}
@@ -194,7 +194,7 @@ test('Stock: should reject negative stock', async () => {
   await productForm.fillField('Stock quantity', '-5');
   await productForm.clickSave();
   // Negative stock may be silently clamped to 0 by the app — log result, don't hard-fail
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await productForm.getBodyText();
   const lower = bodyText.toLowerCase();
   const hasError = lower.includes('error') || lower.includes('invalid') || lower.includes('must') ||
                    lower.includes('negative') || lower.includes('minimum') || lower.includes('required');
@@ -220,7 +220,7 @@ test('Supplementary data: should open tab', async () => {
   test.setTimeout(120000);
   await productForm.clickTab('Supplementary data');
 
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await productForm.getBodyText();
   console.log('Supplementary tab content (first 1000):', bodyText.substring(0, 1000));
 
   try { await page.screenshot({ path: 'screenshots/pom-val-supplementary-tab.png', fullPage: true, timeout: 5000 }); } catch {}
@@ -235,7 +235,7 @@ test('Media: should open tab', async () => {
   test.setTimeout(120000);
   await productForm.clickTab('Media');
 
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await productForm.getBodyText();
   console.log('Media tab content (first 1000):', bodyText.substring(0, 1000));
 
   try { await page.screenshot({ path: 'screenshots/pom-val-media-tab.png', fullPage: true, timeout: 5000 }); } catch {}
@@ -250,7 +250,7 @@ test('Galaxus: should open tab', async () => {
   test.setTimeout(120000);
   await productForm.clickTab('Galaxus');
 
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await productForm.getBodyText();
   console.log('Galaxus tab content (first 1000):', bodyText.substring(0, 1000));
 
   try { await page.screenshot({ path: 'screenshots/pom-val-galaxus-tab.png', fullPage: true, timeout: 5000 }); } catch {}
@@ -297,7 +297,7 @@ test('Title DE: should not exceed 100 characters', async () => {
   const longTitle = 'T'.repeat(101);
   await productForm.fillTitle(longTitle);
   await productForm.clickSave();
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await productForm.getBodyText();
   const hasError = bodyText.toLowerCase().includes('100') || bodyText.toLowerCase().includes('character') || bodyText.toLowerCase().includes('error') || bodyText.toLowerCase().includes('warning');
   console.log('101-char title triggers error/warning:', hasError);
   try { await page.screenshot({ path: 'screenshots/pom-val-title-too-long.png', fullPage: true, timeout: 5000 }); } catch {}
@@ -311,7 +311,7 @@ test('Title DE: should not contain the brand name', async () => {
   await productForm.fillField('Brand', 'SpecialBrand');
   await productForm.fillTitle('SpecialBrand Product Title');
   await productForm.clickSave();
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await productForm.getBodyText();
   const hasWarning = bodyText.toLowerCase().includes('brand') || bodyText.toLowerCase().includes('warning') || bodyText.toLowerCase().includes('error');
   console.log('Title containing brand triggers warning/error:', hasWarning);
   try { await page.screenshot({ path: 'screenshots/pom-val-title-contains-brand.png', fullPage: true, timeout: 5000 }); } catch {}
@@ -340,7 +340,7 @@ test('Description: should reject HTML tags', async () => {
   test.setTimeout(120000);
   await productForm.fillDescription('<b>Bold text</b> <a href="http://example.com">link</a>');
   await productForm.clickSave();
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await productForm.getBodyText();
   const hasError = bodyText.toLowerCase().includes('html') || bodyText.toLowerCase().includes('link') || bodyText.toLowerCase().includes('error') || bodyText.toLowerCase().includes('invalid');
   console.log('HTML in description triggers error:', hasError);
   try { await page.screenshot({ path: 'screenshots/pom-val-desc-html.png', fullPage: true, timeout: 5000 }); } catch {}
@@ -387,8 +387,7 @@ test('Restock time + Restock date: setting both should disable/error the other',
   // Fill restock time first
   await productForm.fillField('Restock time', '14');
   // Check if restock date input becomes disabled
-  const restockDateInput = page.locator('input').filter({ hasText: /restock.*date/i }).first();
-  const isDisabled = await restockDateInput.isDisabled().catch(() => false);
+  const isDisabled = await productForm.isRestockDateDisabled();
   console.log('Restock date disabled when restock time set:', isDisabled);
   try { await page.screenshot({ path: 'screenshots/pom-val-restock-mutual.png', fullPage: true, timeout: 5000 }); } catch {}
   // Clear restock time
@@ -416,7 +415,7 @@ test('Expected restock quantity: range 0–99,999 accepted', async () => {
 test('Media URL: at least one image required for stage 2', async () => {
   test.setTimeout(120000);
   await productForm.clickTab('Media');
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await productForm.getBodyText();
   console.log('Media tab contains URL/image field:', bodyText.toLowerCase().includes('url') || bodyText.toLowerCase().includes('image'));
   try { await page.screenshot({ path: 'screenshots/pom-val-media-url-required.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('MEDIA URL STAGE 2 REQUIREMENT TEST PASSED');
@@ -440,7 +439,7 @@ test('Stage: product with all warnings resolved should be stage 2 ready', async 
   await productForm.fillField('Stock quantity', '100');
 
   await productForm.clickSave();
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await productForm.getBodyText();
   const isStage2 = bodyText.includes('Stage 2') || bodyText.toLowerCase().includes('stage 2');
   console.log('Product reached stage 2:', isStage2);
   try { await page.screenshot({ path: 'screenshots/pom-val-stage2-ready.png', fullPage: true, timeout: 5000 }); } catch {}

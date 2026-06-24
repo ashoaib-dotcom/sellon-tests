@@ -210,7 +210,12 @@ test('SFTP: Upload GORDP — create order in Sellon frontend @regression', async
   }
 
   if (pickedUp) {
-    console.log('Sellon picked up and processed the GORDP ✓');
+    console.log('Sellon picked up the GORDP file ✓ — waiting 45s for order to appear in DB...');
+    // File disappearing from SFTP only means the backend ingested it.
+    // The order is written to the DB asynchronously; order-workflow needs it
+    // to be in "New" state before it starts, so we give the backend time to commit.
+    await new Promise(r => setTimeout(r, 45000));
+    console.log('DB settle wait complete — order should now be visible in frontend');
   } else {
     console.log('WARNING: GORDP still in dg2partner after 90s — order may not appear on frontend');
     console.log('Possible cause: order ID does not exist in Sellon staging database');

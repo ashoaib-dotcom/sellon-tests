@@ -143,7 +143,7 @@ test.skip('TC-04: Multi-select Category filter — filtered by selected categori
   await page.waitForTimeout(500);
 
   // Read all visible dropdown items by index (avoids stale text-match issues)
-  const allItems = page.locator('.dropdown-item').filter({ visible: true });
+  const allItems = productListPage.getDropdownItems();
   const itemCount = await allItems.count();
   console.log('Category dropdown item count:', itemCount);
 
@@ -161,7 +161,7 @@ test.skip('TC-04: Multi-select Category filter — filtered by selected categori
   console.log('Selecting categories:', toSelect);
 
   for (const opt of toSelect) {
-    const el = page.locator(`.dropdown-item:has-text("${opt}")`).filter({ visible: true }).first();
+    const el = productListPage.getDropdownItemByText(opt);
     if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
       await el.click();
       await page.waitForTimeout(400);
@@ -376,12 +376,12 @@ test('TC-13: Combined — State "Stage 2" + Provider key "BT-SPK" narrows result
 test('TC-14: Horizontal scrolling reveals hidden columns (titleDE, Brand, Owner, etc.)', async () => {
   test.setTimeout(60000);
 
-  const table = page.locator('table, [class*="grid"], [class*="table"]').first();
+  const table = productListPage.getTable();
   if (await table.count() > 0) {
     // Scroll right to reveal additional columns
     await table.evaluate((el) => { el.scrollLeft += 600; });
     await page.waitForTimeout(1000);
-    const bodyAfterScroll = await page.locator('body').innerText();
+    const bodyAfterScroll = await productListPage.getBodyText();
     const hasHiddenCols = bodyAfterScroll.toLowerCase().includes('title') ||
       bodyAfterScroll.toLowerCase().includes('brand') ||
       bodyAfterScroll.toLowerCase().includes('owner') ||
@@ -502,7 +502,7 @@ test('TC-18: Special characters in Name filter show 0 results without crashing',
   console.log('Special chars filter → pagination:', paginationText, '| total:', totalAfter);
 
   // App must not crash — pagination or empty state should be visible
-  const pageVisible = await page.locator('body').isVisible();
+  const pageVisible = await productListPage.isPageAlive();
   console.log('Page still visible (no crash):', pageVisible);
 
   try { await page.screenshot({ path: 'screenshots/tc18-special-chars.png', timeout: 5000 }); } catch {}
@@ -527,7 +527,7 @@ test('TC-19 (Negative): SQL injection in Name filter does not crash or expose al
 
   const totalAfter     = await productListPage.getPaginationTotal();
   const paginationText = await productListPage.getPaginationText().catch(() => 'N/A');
-  const pageAlive      = await page.locator('body').isVisible();
+  const pageAlive      = await productListPage.isPageAlive();
 
   console.log(`SQL injection in Name → pagination: ${paginationText} | total: ${totalAfter}`);
   console.log('Page still alive (no crash):', pageAlive);
@@ -550,7 +550,7 @@ test('TC-20 (Negative): Very long value in Name filter does not crash the page',
   await productListPage.setTextFilter(8, longValue);
   await productListPage.clickSearch();
 
-  const pageAlive      = await page.locator('body').isVisible();
+  const pageAlive      = await productListPage.isPageAlive();
   const paginationText = await productListPage.getPaginationText().catch(() => 'N/A');
 
   console.log(`500-char Name filter → pagination: ${paginationText}`);

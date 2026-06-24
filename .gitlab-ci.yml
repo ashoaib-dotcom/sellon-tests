@@ -163,7 +163,7 @@ profile:
 admin-cleanup:
   extends: .test-template
   timeout: 15 minutes
-  needs: [sftp-upload]
+  needs: [sftp-upload, order-workflow]
   variables:
     TEST_FILE: tests/17-admin-cleanup-pom.spec.ts
 

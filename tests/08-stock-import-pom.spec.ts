@@ -81,56 +81,6 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: 'serial' });
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-async function openStockImportDialog(): Promise<boolean> {
-  const fileInput = page.locator('input[type="file"]');
-  if (await fileInput.count() > 0) return true;
-  await navPage.navigateToProducts();
-  await page.waitForTimeout(2000);
-  const btn = page.getByText('Stock import', { exact: true }).filter({ visible: true }).first();
-  if (!await btn.isVisible({ timeout: 5000 }).catch(() => false)) return false;
-  await btn.click();
-  await page.waitForTimeout(3000);
-  return await page.locator('input[type="file"]').count() > 0;
-}
-
-async function closeStockImportDialog() {
-  for (const name of [/Cancel|Close|Back|Done|Finish|OK/i]) {
-    try {
-      const btn = page.getByRole('button', { name }).first();
-      if (await btn.isVisible({ timeout: 2000 })) { await btn.click(); await page.waitForTimeout(2000); return; }
-    } catch {}
-  }
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(1500);
-}
-
-async function runStockImport(): Promise<boolean> {
-  for (const btnName of ['Run', 'Start', 'Execute', 'Import', 'Upload', 'OK', 'Confirm', 'Submit']) {
-    try {
-      const btn = page.getByRole('button', { name: btnName }).first();
-      if (await btn.isVisible({ timeout: 2000 }) && await btn.isEnabled({ timeout: 500 }).catch(() => false)) {
-        await btn.click();
-        await page.waitForTimeout(3000);
-        return true;
-      }
-    } catch {}
-  }
-  return false;
-}
-
-async function waitForStockImportResult(timeoutMs = 120000): Promise<'success' | 'error' | 'timeout'> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    await page.waitForTimeout(5000);
-    const body = (await page.locator('body').innerText({ timeout: 10000 }).catch(() => '')).toLowerCase();
-    if (body.includes('complete') || body.includes('success') || body.includes('finished')) return 'success';
-    if (body.includes('error') || body.includes('invalid') || body.includes('failed')) return 'error';
-  }
-  return 'timeout';
-}
-
 // ==========================================
 // STEP 1: VERIFY PRODUCTS BEFORE STOCK UPDATE
 // ==========================================
@@ -150,11 +100,10 @@ test('Stock Import Step 1: Verify products before stock update', async () => {
 
 test('Stock Import Step 2: Click Stock import button', async () => {
   test.setTimeout(120000);
-  await page.getByText('Stock import', { exact: true }).click();
-  await page.waitForTimeout(10000);
+  await productListPage.clickStockImport();
   try { await page.screenshot({ path: 'screenshots/pom-stock-2-dialog.png', fullPage: true, timeout: 5000 }); } catch {}
 
-  const buttons = await page.getByRole('button').allTextContents();
+  const buttons = await productListPage.getAllButtonTexts();
   console.log('Stock import dialog buttons:', buttons);
 
   console.log('STEP 2 PASSED');
@@ -167,24 +116,13 @@ test('Stock Import Step 2: Click Stock import button', async () => {
 test('Stock Import Step 3: Try import without file - expect error', async () => {
   test.setTimeout(120000);
 
-  const possibleButtons = ['Run', 'Start', 'Execute', 'Import', 'OK', 'Confirm', 'Submit', 'Upload'];
-  for (const btnName of possibleButtons) {
-    try {
-      const btn = page.getByRole('button', { name: btnName }).first();
-      if (await btn.isVisible({ timeout: 2000 })) {
-        console.log(`Clicking "${btnName}" without file...`);
-        await btn.click();
-        await page.waitForTimeout(5000);
-        break;
-      }
-    } catch {}
-  }
+  await productListPage.clickImportRunButton();
 
   try { await page.screenshot({ path: 'screenshots/pom-stock-3-no-file-error.png', fullPage: true, timeout: 5000 }); } catch {}
 
-  const bodyText = await page.locator('body').innerText();
-  console.log('Contains "error":', bodyText.toLowerCase().includes('error'));
-  console.log('Contains "file":', bodyText.toLowerCase().includes('file'));
+  const bodyText = await productListPage.getBodyText();
+  console.log('Contains "error":', bodyText.includes('error'));
+  console.log('Contains "file":', bodyText.includes('file'));
 
   console.log('STEP 3 PASSED - No file error shown');
 });
@@ -196,21 +134,14 @@ test('Stock Import Step 3: Try import without file - expect error', async () => 
 test('Stock Import Step 4: Close error and reopen dialog', async () => {
   test.setTimeout(120000);
 
-  try { await page.keyboard.press('Escape'); await page.waitForTimeout(3000); } catch {}
-  try {
-    const okBtn = page.getByRole('button', { name: /OK|Close|Cancel/i }).first();
-    if (await okBtn.isVisible({ timeout: 2000 })) { await okBtn.click(); await page.waitForTimeout(3000); }
-  } catch {}
+  await productListPage.closeImportDialog();
 
-  const fileInputCount = await page.locator('input[type="file"]').count();
-  if (fileInputCount === 0) {
+  if (!await productListPage.isFileInputPresent()) {
     try {
-      await page.getByText('Stock import', { exact: true }).click();
-      await page.waitForTimeout(10000);
+      await productListPage.clickStockImport();
     } catch {
       await navPage.navigateToProducts();
-      await page.getByText('Stock import', { exact: true }).click();
-      await page.waitForTimeout(10000);
+      await productListPage.clickStockImport();
     }
   }
 
@@ -228,9 +159,8 @@ test('Stock Import Step 5: Upload stock update CSV', async () => {
   const csvFilePath = path.resolve('test-data/stock-update.csv');
   console.log('Stock CSV path:', csvFilePath);
 
-  const fileInput = page.locator('input[type="file"]');
-  if (await fileInput.count() > 0) {
-    await fileInput.first().setInputFiles(csvFilePath);
+  if (await productListPage.isFileInputPresent()) {
+    await productListPage.attachFile(csvFilePath);
     console.log('Stock file uploaded');
   }
 
@@ -246,18 +176,7 @@ test('Stock Import Step 5: Upload stock update CSV', async () => {
 test('Stock Import Step 6: Run the stock import', async () => {
   test.setTimeout(120000);
 
-  const possibleButtons = ['Run', 'Start', 'Execute', 'Import', 'OK', 'Confirm', 'Submit', 'Upload'];
-  for (const btnName of possibleButtons) {
-    try {
-      const btn = page.getByRole('button', { name: btnName }).first();
-      if (await btn.isVisible({ timeout: 2000 })) {
-        console.log(`Clicking "${btnName}"`);
-        await btn.click();
-        await page.waitForTimeout(5000);
-        break;
-      }
-    } catch {}
-  }
+  await productListPage.clickImportRunButton();
 
   try { await page.screenshot({ path: 'screenshots/pom-stock-6-started.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 6 PASSED');
@@ -274,10 +193,10 @@ test('Stock Import Step 7: Wait for completion', async () => {
     await page.waitForTimeout(15000);
     try {
       try { await page.screenshot({ path: `screenshots/pom-stock-7-progress-${i}.png`, fullPage: true, timeout: 10000 }); } catch {}
-      const bodyText = await page.locator('body').innerText({ timeout: 10000 });
-      console.log(`Check ${i}: complete=${bodyText.toLowerCase().includes('complete')}, success=${bodyText.toLowerCase().includes('success')}, error=${bodyText.toLowerCase().includes('error')}`);
+      const bodyText = await productListPage.getBodyText();
+      console.log(`Check ${i}: complete=${bodyText.includes('complete')}, success=${bodyText.includes('success')}, error=${bodyText.includes('error')}`);
 
-      if (bodyText.toLowerCase().includes('complete') || bodyText.toLowerCase().includes('success')) {
+      if (bodyText.includes('complete') || bodyText.includes('success')) {
         console.log('Stock import complete!');
         break;
       }
@@ -285,7 +204,7 @@ test('Stock Import Step 7: Wait for completion', async () => {
   }
 
   try {
-    const finalText = await page.locator('body').innerText({ timeout: 10000 });
+    const finalText = await productListPage.getBodyText();
     console.log('STOCK IMPORT RESULT (first 2000):', finalText.substring(0, 2000));
   } catch {}
 
@@ -299,11 +218,7 @@ test('Stock Import Step 7: Wait for completion', async () => {
 test('Stock Import Step 8: Close import dialog and verify product list', async () => {
   test.setTimeout(60000);
 
-  // Close the import popup
-  const closeBtn = page.getByText('Close', { exact: true });
-  if (await closeBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await closeBtn.click();
-  }
+  await productListPage.clickCloseButton();
 
   // Wait a few seconds for the product list to settle
   await page.waitForTimeout(5000);
@@ -322,13 +237,10 @@ test('Stock Import negative: uploading a non-CSV file should show an error', asy
   test.setTimeout(120000);
 
   // Re-open the stock import dialog
-  const stockImportBtn = page.getByText('Stock import', { exact: true }).filter({ visible: true }).first();
-  if (!await stockImportBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await page.getByText('Import', { exact: true }).filter({ visible: true }).first().click();
-    await page.waitForTimeout(2000);
-  } else {
-    await stockImportBtn.click();
-    await page.waitForTimeout(2000);
+  const opened = await productListPage.openStockImportDialog();
+  if (!opened) {
+    await navPage.navigateToProducts();
+    await productListPage.openStockImportDialog();
   }
 
   // Create a temporary .txt file and attempt to upload it
@@ -336,16 +248,15 @@ test('Stock Import negative: uploading a non-CSV file should show an error', asy
   const tmpPath = '/tmp/not-a-csv.txt';
   writeFileSync(tmpPath, 'this is not a valid CSV file');
 
-  const fileInput = page.locator('input[type="file"]').first();
-  if (await fileInput.count() > 0) {
-    await fileInput.setInputFiles(tmpPath);
+  if (await productListPage.isFileInputPresent()) {
+    await productListPage.attachFile(tmpPath);
     await page.waitForTimeout(3000);
 
-    const bodyText = await page.locator('body').innerText();
-    const hasError = bodyText.toLowerCase().includes('error') ||
-      bodyText.toLowerCase().includes('invalid') ||
-      bodyText.toLowerCase().includes('format') ||
-      bodyText.toLowerCase().includes('csv');
+    const bodyText = await productListPage.getBodyText();
+    const hasError = bodyText.includes('error') ||
+      bodyText.includes('invalid') ||
+      bodyText.includes('format') ||
+      bodyText.includes('csv');
     console.log('Error shown for non-CSV upload:', hasError);
   } else {
     console.log('File input not found — skipping upload');
@@ -372,28 +283,27 @@ test('Stock Import Step 9: Upload XLSX file — expect successful import', async
     return;
   }
 
-  const opened = await openStockImportDialog();
+  const opened = await productListPage.openStockImportDialog();
   if (!opened) { console.log('Stock import dialog did not open — skipping'); return; }
 
   try { await page.screenshot({ path: 'screenshots/pom-stock-9-xlsx-dialog.png', fullPage: true, timeout: 5000 }); } catch {}
 
-  const fileInput = page.locator('input[type="file"]').first();
-  await fileInput.setInputFiles(xlsxPath);
+  await productListPage.attachFile(xlsxPath);
   console.log('XLSX file attached:', path.basename(xlsxPath));
   await page.waitForTimeout(2000);
   try { await page.screenshot({ path: 'screenshots/pom-stock-9-xlsx-attached.png', fullPage: true, timeout: 5000 }); } catch {}
 
   // Check for immediate rejection on attach
-  const bodyAfterAttach = (await page.locator('body').innerText()).toLowerCase();
+  const bodyAfterAttach = await productListPage.getBodyText();
   const rejectedImmediately = bodyAfterAttach.includes('invalid') ||
     bodyAfterAttach.includes('not supported') ||
     bodyAfterAttach.includes('wrong format');
   console.log('XLSX rejected immediately on attach:', rejectedImmediately);
 
-  const started = await runStockImport();
+  const started = await productListPage.clickImportRunButton();
   console.log('XLSX stock import started:', started);
 
-  const result = await waitForStockImportResult();
+  const result = await productListPage.waitForImportResult();
   console.log('XLSX stock import result:', result);
   try { await page.screenshot({ path: 'screenshots/pom-stock-9-xlsx-result.png', fullPage: true, timeout: 5000 }); } catch {}
 
@@ -403,7 +313,7 @@ test('Stock Import Step 9: Upload XLSX file — expect successful import', async
     console.log('XLSX stock import showed an error — system responded clearly');
   }
 
-  await closeStockImportDialog();
+  await productListPage.closeImportDialog();
   console.log('STEP 9 PASSED');
 });
 
@@ -429,21 +339,20 @@ test('Stock Import negative: Upload PNG file — expect format rejection', async
   ]);
   fs.writeFileSync(pngPath, pngBytes);
 
-  const opened = await openStockImportDialog();
+  const opened = await productListPage.openStockImportDialog();
   if (!opened) { console.log('Stock import dialog did not open — skipping'); return; }
 
   try { await page.screenshot({ path: 'screenshots/pom-stock-neg-png-dialog.png', fullPage: true, timeout: 5000 }); } catch {}
 
-  const fileInput = page.locator('input[type="file"]').first();
-  const acceptAttr = await fileInput.getAttribute('accept').catch(() => '');
+  const acceptAttr = await productListPage.getFileInputAccept();
   console.log('File input accept attribute:', acceptAttr || '(none)');
 
-  await fileInput.setInputFiles(pngPath);
+  await productListPage.attachFile(pngPath);
   console.log('PNG file attached');
   await page.waitForTimeout(3000);
   try { await page.screenshot({ path: 'screenshots/pom-stock-neg-png-attached.png', fullPage: true, timeout: 5000 }); } catch {}
 
-  const bodyAfterAttach = (await page.locator('body').innerText()).toLowerCase();
+  const bodyAfterAttach = await productListPage.getBodyText();
   const rejectedOnAttach =
     bodyAfterAttach.includes('invalid') ||
     bodyAfterAttach.includes('not supported') ||
@@ -455,9 +364,9 @@ test('Stock Import negative: Upload PNG file — expect format rejection', async
   console.log('PNG rejected on attach:', rejectedOnAttach);
 
   if (!rejectedOnAttach) {
-    await runStockImport();
+    await productListPage.clickImportRunButton();
     await page.waitForTimeout(5000);
-    const bodyAfterRun = (await page.locator('body').innerText()).toLowerCase();
+    const bodyAfterRun = await productListPage.getBodyText();
     const rejectedAfterRun =
       bodyAfterRun.includes('invalid') ||
       bodyAfterRun.includes('error') ||
@@ -468,7 +377,7 @@ test('Stock Import negative: Upload PNG file — expect format rejection', async
   }
 
   console.log('PNG file correctly rejected by the system');
-  await closeStockImportDialog();
+  await productListPage.closeImportDialog();
   fs.unlinkSync(pngPath);
   console.log('STOCK IMPORT NEG PNG TEST PASSED');
 });
@@ -488,19 +397,18 @@ test('Stock Import negative: Upload CSV with wrong columns — expect validation
     'Jane,Smith,jane@test.com',
   ].join('\n'));
 
-  const opened = await openStockImportDialog();
+  const opened = await productListPage.openStockImportDialog();
   if (!opened) { console.log('Stock import dialog did not open — skipping'); return; }
 
-  const fileInput = page.locator('input[type="file"]').first();
-  await fileInput.setInputFiles(wrongCsvPath);
+  await productListPage.attachFile(wrongCsvPath);
   console.log('Wrong-column CSV attached');
   await page.waitForTimeout(2000);
   try { await page.screenshot({ path: 'screenshots/pom-stock-neg-wrong-cols-attached.png', fullPage: true, timeout: 5000 }); } catch {}
 
-  await runStockImport();
+  await productListPage.clickImportRunButton();
   await page.waitForTimeout(5000);
 
-  const bodyText = (await page.locator('body').innerText()).toLowerCase();
+  const bodyText = await productListPage.getBodyText();
   const hasError =
     bodyText.includes('error') ||
     bodyText.includes('invalid') ||
@@ -512,7 +420,7 @@ test('Stock Import negative: Upload CSV with wrong columns — expect validation
 
   try { await page.screenshot({ path: 'screenshots/pom-stock-neg-wrong-cols-result.png', fullPage: true, timeout: 5000 }); } catch {}
 
-  await closeStockImportDialog();
+  await productListPage.closeImportDialog();
   fs.unlinkSync(wrongCsvPath);
   console.log('STOCK IMPORT NEG WRONG COLUMNS TEST PASSED');
 });

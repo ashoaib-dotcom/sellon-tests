@@ -181,8 +181,8 @@ test('Step 2: Add shipment on Shipping tab', async () => {
     if (onShippingTab) break;
   }
   if (!onShippingTab) {
-    const tabTexts = await page.locator('[role="tab"], .tab, lb-tab').filter({ visible: true }).allTextContents();
-    console.log(`Shipping tab not found. Available: ${JSON.stringify(tabTexts.map(t => t.trim()).filter(Boolean))}`);
+    const availableTabs = await orderDetail.getAvailableTabs();
+    console.log(`Shipping tab not found. Available: ${JSON.stringify(availableTabs)}`);
     await ss('step2-no-shipping-tab');
     return;
   }
@@ -225,7 +225,7 @@ test('Step 2: Add shipment on Shipping tab', async () => {
   // Wait for modal to close before saving
   await orderDetail.waitForModalToClose();
 
-  const modalStillVisible = await page.locator('lb-modal').isVisible().catch(() => false);
+  const modalStillVisible = await orderDetail.isModalVisible();
   if (!modalStillVisible) {
     await orderDetail.save();
     await ss('step2-saved');
@@ -432,72 +432,38 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
     console.log('  Navigated to Order Items tab');
   } else {
     console.log('  Order Items tab not found — trying fallback selectors');
-    const navLink = page.locator('lb-tab, [role="tab"], .tab-label')
-      .filter({ hasText: /order.?items|items|positions/i })
-      .filter({ visible: true }).first();
-    if (await navLink.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await navLink.click();
-      await page.waitForTimeout(2000);
-    }
+    await orderDetail.switchTab('Items');
+    await orderDetail.switchTab('Positions');
   }
   await ss('step6-order-items-tab');
 
   // Look for Reject Order as ribbon button, regular button, OR any clickable element on the page
   let cancelClicked = false;
   for (const pattern of CANCEL_PATTERNS) {
-    // 1. Ribbon button — delegate to orderDetail
-    if (await orderDetail.isRibbonButtonVisible(pattern)) {
-      await orderDetail.clickRibbonButton(pattern);
-      await page.waitForTimeout(2000);
-      console.log(`  Clicked ribbon button matching ${pattern}`);
+    const clicked = await orderDetail.clickRibbonButton(pattern);
+    if (clicked) {
       cancelClicked = true;
-      break;
-    }
-    // 2. Role=button
-    const genericBtn = page.getByRole('button', { name: pattern }).filter({ visible: true }).first();
-    if (await genericBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await genericBtn.click();
-      await page.waitForTimeout(2000);
       console.log(`  Clicked button matching ${pattern}`);
-      cancelClicked = true;
-      break;
-    }
-    // 3. Any clickable element (link, span, div with click handler)
-    const anyEl = page.locator('a, lb-button, button, [role="button"]')
-      .filter({ hasText: pattern }).filter({ visible: true }).first();
-    if (await anyEl.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await anyEl.evaluate((el: HTMLElement) => el.click());
-      await page.waitForTimeout(2000);
-      console.log(`  Clicked element matching ${pattern}`);
-      cancelClicked = true;
       break;
     }
   }
 
   if (!cancelClicked) {
-    // Log everything visible to help identify the reject button
-    const ribbonLabels = await orderDetail.getRibbonButtons();
-    const allBtns = await page.getByRole('button').filter({ visible: true }).allTextContents();
-    console.log(`Step 6: Reject button not found.`);
-    console.log(`  Ribbon: ${JSON.stringify(ribbonLabels)}`);
-    console.log(`  Buttons: ${JSON.stringify(allBtns.map(t => t.trim()).filter(Boolean))}`);
+    const allLabels = await orderDetail.getRibbonButtons();
+    console.log(`Step 6: Reject button not found. Visible: ${JSON.stringify(allLabels)}`);
     await ss('step6-no-cancel-btn');
     await orderDetail.close();
     return;
   }
 
-  // Log all visible buttons to diagnose confirmation dialog
   await ss('step6-after-cancel-btn');
-  const allButtons = await page.getByRole('button').filter({ visible: true }).allTextContents();
-  console.log(`  Visible buttons after cancel click: ${JSON.stringify(allButtons.map(t => t.trim()).filter(Boolean))}`);
+  const allButtons = await orderDetail.getRibbonButtons();
+  console.log(`  Visible buttons after cancel click: ${JSON.stringify(allButtons)}`);
 
   // Confirm any "are you sure?" dialog
   let confirmed = false;
   for (const confirmPattern of CONFIRM_PATTERNS) {
-    const confirmBtn = page.getByRole('button', { name: confirmPattern }).filter({ visible: true }).first();
-    if (await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await confirmBtn.click();
-      await page.waitForTimeout(2000);
+    if (await orderDetail.confirmOrderAction(confirmPattern)) {
       console.log(`  Confirmed dialog with "${confirmPattern}"`);
       confirmed = true;
       break;
