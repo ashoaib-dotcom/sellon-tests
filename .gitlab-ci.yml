@@ -23,6 +23,35 @@ default:
     - npx playwright install-deps chromium
     - npx playwright install chromium
 
+# ── Reusable .env generator (safe: uses printf so special chars in passwords don't break values)
+.gen-env: &gen-env
+  - |
+    for var in BASE_URL TEST_USERNAME TEST_PASSWORD ADMIN_USERNAME ADMIN_PASSWORD \
+                ADMIN_COMPANY_ID ADMIN_SUPPLIER_ID SFTP_HOST SFTP_PORT \
+                SFTP_USERNAME SFTP_PASSWORD SFTP_SUPPLIER_ID \
+                SFTP_REMOTE_IN_DIR SFTP_REMOTE_OUT_DIR; do
+      printf '%s=%s\n' "$var" "$(printenv "$var" 2>/dev/null || true)"
+    done > .env
+
+# ── Debug helper (shows which vars are set without printing sensitive values)
+.debug-env: &debug-env
+  - |
+    echo "=== CI environment check ==="
+    for var in BASE_URL TEST_USERNAME ADMIN_USERNAME ADMIN_COMPANY_ID ADMIN_SUPPLIER_ID \
+                SFTP_HOST SFTP_PORT SFTP_USERNAME SFTP_SUPPLIER_ID \
+                SFTP_REMOTE_IN_DIR SFTP_REMOTE_OUT_DIR; do
+      val=$(printenv "$var" 2>/dev/null || true)
+      if [ -n "$val" ]; then
+        echo "  $var: SET"
+      else
+        echo "  $var: *** MISSING — tests may skip ***"
+      fi
+    done
+    echo "=== Fixture files ==="
+    ls -la fixtures/ 2>/dev/null || echo "  (no fixtures/ directory)"
+    echo "=== .env generated ==="
+    grep -v 'PASSWORD\|TOKEN\|SECRET' .env || true
+
 # Shared template for all test jobs
 .test-template:
   stage: test
@@ -30,23 +59,8 @@ default:
   tags:
     - kasm_docker
   script:
-    - |
-      cat > .env << EOF
-      BASE_URL=${BASE_URL}
-      TEST_USERNAME=${TEST_USERNAME}
-      TEST_PASSWORD=${TEST_PASSWORD}
-      ADMIN_USERNAME=${ADMIN_USERNAME}
-      ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      ADMIN_COMPANY_ID=${ADMIN_COMPANY_ID}
-      ADMIN_SUPPLIER_ID=${ADMIN_SUPPLIER_ID}
-      SFTP_HOST=${SFTP_HOST}
-      SFTP_PORT=${SFTP_PORT}
-      SFTP_USERNAME=${SFTP_USERNAME}
-      SFTP_PASSWORD=${SFTP_PASSWORD}
-      SFTP_SUPPLIER_ID=${SFTP_SUPPLIER_ID}
-      SFTP_REMOTE_IN_DIR=${SFTP_REMOTE_IN_DIR}
-      SFTP_REMOTE_OUT_DIR=${SFTP_REMOTE_OUT_DIR}
-      EOF
+    - *gen-env
+    - *debug-env
     - mkdir -p screenshots
     - npx playwright test $TEST_FILE --reporter=html,list
   artifacts:
@@ -157,23 +171,8 @@ regression:
   extends: .test-template
   timeout: 30 minutes
   script:
-    - |
-      cat > .env << EOF
-      BASE_URL=${BASE_URL}
-      TEST_USERNAME=${TEST_USERNAME}
-      TEST_PASSWORD=${TEST_PASSWORD}
-      ADMIN_USERNAME=${ADMIN_USERNAME}
-      ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      ADMIN_COMPANY_ID=${ADMIN_COMPANY_ID}
-      ADMIN_SUPPLIER_ID=${ADMIN_SUPPLIER_ID}
-      SFTP_HOST=${SFTP_HOST}
-      SFTP_PORT=${SFTP_PORT}
-      SFTP_USERNAME=${SFTP_USERNAME}
-      SFTP_PASSWORD=${SFTP_PASSWORD}
-      SFTP_SUPPLIER_ID=${SFTP_SUPPLIER_ID}
-      SFTP_REMOTE_IN_DIR=${SFTP_REMOTE_IN_DIR}
-      SFTP_REMOTE_OUT_DIR=${SFTP_REMOTE_OUT_DIR}
-      EOF
+    - *gen-env
+    - *debug-env
     - mkdir -p screenshots
     - npx playwright test tests/01-login-pom.spec.ts tests/02-dashboard-pom.spec.ts tests/10-sftp-upload-pom.spec.ts tests/11-order-workflow-pom.spec.ts tests/12-orders-pom.spec.ts --grep "@regression" --reporter=html,list
   variables:
