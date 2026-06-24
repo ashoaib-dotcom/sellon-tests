@@ -3,7 +3,6 @@ import { LoginPage } from '../pages/login.page';
 import { DashboardPage } from '../pages/dashboard.page';
 import { NavigationPage } from '../pages/navigation.page';
 import { ProductListPage } from '../pages/product-list.page';
-
 let page: Page;
 let loginPage: LoginPage;
 let dashboardPage: DashboardPage;
@@ -24,29 +23,27 @@ test.beforeAll(async ({ browser }) => {
   await loginPage.login(process.env.TEST_USERNAME || '', process.env.TEST_PASSWORD || '');
 
   // Login complete - now wait for dashboard to fully render
-  console.log('⏳ Waiting for dashboard content...');
+  console.log('Waiting for dashboard content...');
 
   // Wait for menu icon to confirm app shell is ready
-  await page.locator('.menu-icon').waitFor({ state: 'visible', timeout: 30000 })
-    .catch(() => console.log('⚠️ menu-icon not visible'));
+  await navPage.expectMenuIconVisible()
+    .catch(() => console.log('menu-icon not visible'));
 
   // Wait for blocking modal to dismiss
-  await page.locator('lb-modal-blocking').waitFor({ state: 'hidden', timeout: 10000 })
-    .catch(() => console.log('⚠️ No blocking modal'));
+  await dashboardPage.dismissBlockingModal();
 
   // Wait for Angular to render dashboard content
   await page.waitForTimeout(8000);
 
   // Verify headings are present
   const headings = await page.getByRole('heading').allInnerTexts();
-  console.log('✅ Headings after full wait:', headings);
+  console.log('Headings after full wait:', headings);
 
   // Take screenshot of dashboard state
-  await page.screenshot({ path: 'screenshots/dashboard-setup.png', fullPage: true })
-    .catch(() => {});
+  await dashboardPage.screenshot('dashboard-setup');
 
   console.log('URL:', page.url());
-  console.log('SETUP COMPLETE ✅');
+  console.log('SETUP COMPLETE');
 });
 
 test.afterAll(async () => {
@@ -318,7 +315,7 @@ test('Product overview: should sort by clicking column header', async () => {
 test('Product overview: export status and product stage visible in list', async () => {
   test.setTimeout(60000);
   await productListPage.expectTableVisible();
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await dashboardPage.getBodyText();
   const hasStage = bodyText.includes('Stage 1') || bodyText.includes('Stage 2') || bodyText.includes('Error');
   console.log('Stage indicators visible:', hasStage);
   await dashboardPage.screenshot('pom-product-stage-export-status');
@@ -380,15 +377,13 @@ test('Dashboard: TV icon opens layout selector and first slot changes the layout
 
   await navPage.navigateToDashboard();
   await page.waitForTimeout(3000);
-  await page.screenshot({ path: 'screenshots/dash-layout-01-initial.png', fullPage: true }).catch(() => {});
+  await dashboardPage.screenshot('dash-layout-01-initial');
   console.log('Initial dashboard loaded');
 
   // Open layout selector (TV / monitor icon)
-  const tvIcon = page.locator('.fas.fa-tv').first();
-  await tvIcon.waitFor({ state: 'visible', timeout: 10000 });
-  await tvIcon.click();
+  await dashboardPage.clickTVIcon();
   await page.waitForTimeout(1500);
-  await page.screenshot({ path: 'screenshots/dash-layout-02-tv-clicked.png', fullPage: true }).catch(() => {});
+  await dashboardPage.screenshot('dash-layout-02-tv-clicked');
   console.log('Layout selector opened via TV icon');
 
   // Select the first available slot (layout option)
@@ -396,28 +391,28 @@ test('Dashboard: TV icon opens layout selector and first slot changes the layout
   if (await firstSlot.isVisible({ timeout: 5000 }).catch(() => false)) {
     await firstSlot.click();
     await page.waitForTimeout(2000);
-    await page.screenshot({ path: 'screenshots/dash-layout-03-first-slot-selected.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('dash-layout-03-first-slot-selected');
     console.log('First layout slot selected');
   } else {
     console.log('No .slot elements visible — layout panel may not have opened');
-    await page.screenshot({ path: 'screenshots/dash-layout-03-no-slot.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('dash-layout-03-no-slot');
   }
 
   // Open layout selector again and pick the second slot option in the row
-  await tvIcon.click();
+  await dashboardPage.clickTVIcon();
   await page.waitForTimeout(1500);
-  await page.screenshot({ path: 'screenshots/dash-layout-04-tv-reopened.png', fullPage: true }).catch(() => {});
+  await dashboardPage.screenshot('dash-layout-04-tv-reopened');
   console.log('Layout selector reopened');
 
   const secondSlot = page.locator('.slot-row > div:nth-child(2)').first();
   if (await secondSlot.isVisible({ timeout: 5000 }).catch(() => false)) {
     await secondSlot.click();
     await page.waitForTimeout(2000);
-    await page.screenshot({ path: 'screenshots/dash-layout-05-second-slot-selected.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('dash-layout-05-second-slot-selected');
     console.log('Second layout slot selected');
   } else {
     console.log('Second slot not visible — skipping');
-    await page.screenshot({ path: 'screenshots/dash-layout-05-no-second-slot.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('dash-layout-05-no-second-slot');
   }
 
   console.log('DASHBOARD LAYOUT SELECTOR TEST PASSED');
@@ -431,9 +426,8 @@ test('Products: TV icon changes layout — vertical and quarter options work', a
   test.setTimeout(120000);
 
   // Navigate to Products via sidebar
-  await page.locator('.menu-icon > div:nth-child(2), .menu-icon').first().click();
-  await page.waitForTimeout(1500);
-  await page.screenshot({ path: 'screenshots/prod-layout-01-menu-opened.png', fullPage: true }).catch(() => {});
+  await navPage.openSidebar();
+  await dashboardPage.screenshot('prod-layout-01-menu-opened');
   console.log('Sidebar opened');
 
   await page.getByText('Product', { exact: true }).first().click();
@@ -443,19 +437,19 @@ test('Products: TV icon changes layout — vertical and quarter options work', a
   // Click the last visible Product link (the sub-nav item)
   await productLinks.nth(Math.min(3, linkCount - 1)).click();
   await page.waitForTimeout(4000);
-  await page.screenshot({ path: 'screenshots/prod-layout-02-products-page.png', fullPage: true }).catch(() => {});
+  await dashboardPage.screenshot('prod-layout-02-products-page');
   console.log('Products page loaded');
 
   // Open layout selector on the Products page
-  const tvIcon = page.locator('.fas.fa-tv').first();
-  if (!await tvIcon.isVisible({ timeout: 8000 }).catch(() => false)) {
+  const tvIconVisible = await page.locator('.fas.fa-tv').first().isVisible({ timeout: 8000 }).catch(() => false);
+  if (!tvIconVisible) {
     console.log('TV icon not visible on Products page — skipping layout tests');
     return;
   }
 
-  await tvIcon.click();
+  await dashboardPage.clickTVIcon();
   await page.waitForTimeout(1500);
-  await page.screenshot({ path: 'screenshots/prod-layout-03-tv-clicked.png', fullPage: true }).catch(() => {});
+  await dashboardPage.screenshot('prod-layout-03-tv-clicked');
   console.log('Layout selector opened on Products page');
 
   // Select vertical layout option (second item in a vertical slot-row)
@@ -463,28 +457,28 @@ test('Products: TV icon changes layout — vertical and quarter options work', a
   if (await verticalSlot.isVisible({ timeout: 5000 }).catch(() => false)) {
     await verticalSlot.click();
     await page.waitForTimeout(2000);
-    await page.screenshot({ path: 'screenshots/prod-layout-04-vertical-selected.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('prod-layout-04-vertical-selected');
     console.log('Vertical layout selected');
   } else {
     console.log('Vertical slot (.slot-row.v > div:nth-child(2)) not visible — skipping');
-    await page.screenshot({ path: 'screenshots/prod-layout-04-no-vertical.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('prod-layout-04-no-vertical');
   }
 
   // Re-open layout selector and pick the quarter option
-  await tvIcon.click();
+  await dashboardPage.clickTVIcon();
   await page.waitForTimeout(1500);
-  await page.screenshot({ path: 'screenshots/prod-layout-05-tv-reopened.png', fullPage: true }).catch(() => {});
+  await dashboardPage.screenshot('prod-layout-05-tv-reopened');
   console.log('Layout selector reopened');
 
   const quarterSlot = page.locator('.option-item.quarter > div').first();
   if (await quarterSlot.isVisible({ timeout: 5000 }).catch(() => false)) {
     await quarterSlot.click();
     await page.waitForTimeout(2000);
-    await page.screenshot({ path: 'screenshots/prod-layout-06-quarter-selected.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('prod-layout-06-quarter-selected');
     console.log('Quarter layout selected');
   } else {
     console.log('Quarter slot (.option-item.quarter > div) not visible — skipping');
-    await page.screenshot({ path: 'screenshots/prod-layout-06-no-quarter.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('prod-layout-06-no-quarter');
   }
 
   console.log('PRODUCTS LAYOUT SELECTOR TEST PASSED');
@@ -497,46 +491,23 @@ test('Products: TV icon changes layout — vertical and quarter options work', a
 test('Navigation: open sidebar and navigate to Orders page @regression', async () => {
   test.setTimeout(120000);
 
-  // Return to home / close any open panel
+  // Return to home / close any open panel via menubar item
   const menubarItem = page.locator('.menubar-item').first();
   await menubarItem.click();
   await page.waitForTimeout(1000);
-  await page.screenshot({ path: 'screenshots/nav-orders-01-menubar-click.png', fullPage: true }).catch(() => {});
+  await dashboardPage.screenshot('nav-orders-01-menubar-click');
   console.log('Menubar item clicked (1st time)');
 
   await menubarItem.click();
   await page.waitForTimeout(1000);
-  await page.screenshot({ path: 'screenshots/nav-orders-02-menubar-click2.png', fullPage: true }).catch(() => {});
+  await dashboardPage.screenshot('nav-orders-02-menubar-click2');
   console.log('Menubar item clicked (2nd time)');
 
-  // Open Orders navigation
-  const navOrders = page.getByRole('navigation').getByText('Orders', { exact: true });
-  if (await navOrders.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await navOrders.scrollIntoViewIfNeeded().catch(() => {});
-    await navOrders.evaluate((el: HTMLElement) => el.click());
-    await page.waitForTimeout(1500);
-    await page.screenshot({ path: 'screenshots/nav-orders-03-orders-parent-clicked.png', fullPage: true }).catch(() => {});
-    console.log('Orders nav parent clicked');
-  } else {
-    // Sidebar might be closed — open it first
-    await page.locator('.menu-icon').click();
-    await page.waitForTimeout(1500);
-    const ordersNav = page.getByRole('navigation').getByText('Orders', { exact: true });
-    await ordersNav.scrollIntoViewIfNeeded().catch(() => {});
-    await ordersNav.evaluate((el: HTMLElement) => el.click()).catch(() => {});
-    await page.waitForTimeout(1500);
-    await page.screenshot({ path: 'screenshots/nav-orders-03-sidebar-reopened.png', fullPage: true }).catch(() => {});
-  }
+  // Navigate to Orders using NavigationPage
+  await navPage.navigateToOrders();
+  await dashboardPage.screenshot('nav-orders-03-orders-page');
 
-  // Click the Orders sub-item (nth(2) from codegen)
-  const ordersLink = page.getByText('Orders').nth(2);
-  if (await ordersLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await ordersLink.evaluate((el: HTMLElement) => el.click());
-    await page.waitForTimeout(4000);
-  }
-  await page.screenshot({ path: 'screenshots/nav-orders-04-orders-page.png', fullPage: true }).catch(() => {});
-
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await dashboardPage.getBodyText();
   console.log('Orders page loaded, contains "Orders":', bodyText.includes('Orders'));
   console.log('NAVIGATE TO ORDERS TEST PASSED');
 });
@@ -549,9 +520,8 @@ test('Navigation: open menu and navigate to Product Details view', async () => {
   test.setTimeout(120000);
 
   // Open the sidebar/menu
-  await page.locator('.menu-icon').click();
-  await page.waitForTimeout(1500);
-  await page.screenshot({ path: 'screenshots/prod-details-01-menu-opened.png', fullPage: true }).catch(() => {});
+  await navPage.openSidebar();
+  await dashboardPage.screenshot('prod-details-01-menu-opened');
   console.log('Menu opened');
 
   // Click Product Details
@@ -559,17 +529,17 @@ test('Navigation: open menu and navigate to Product Details view', async () => {
   if (await productDetailsLink.isVisible({ timeout: 8000 }).catch(() => false)) {
     await productDetailsLink.click();
     await page.waitForTimeout(4000);
-    await page.screenshot({ path: 'screenshots/prod-details-02-product-details-opened.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('prod-details-02-product-details-opened');
     console.log('Product Details view opened');
 
-    const bodyText = await page.locator('body').innerText();
+    const bodyText = await dashboardPage.getBodyText();
     console.log('Page contains "Product":', bodyText.includes('Product'));
   } else {
     console.log('Product Details link not visible in menu — skipping');
     // Log available menu items to help diagnose
     const menuItems = await page.locator('.menu-icon ~ *, nav a, nav .item').allInnerTexts().catch(() => [] as string[]);
     console.log('Visible menu items:', menuItems.slice(0, 10));
-    await page.screenshot({ path: 'screenshots/prod-details-02-no-product-details.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('prod-details-02-no-product-details');
   }
 
   console.log('PRODUCT DETAILS NAVIGATION TEST PASSED');
@@ -584,44 +554,44 @@ test('Dashboard: TV icon and expand button put the view into fullscreen mode', a
 
   await navPage.navigateToDashboard();
   await page.waitForTimeout(3000);
-  await page.screenshot({ path: 'screenshots/dash-expand-01-initial.png', fullPage: true }).catch(() => {});
+  await dashboardPage.screenshot('dash-expand-01-initial');
   console.log('Dashboard loaded for expand test');
 
-  // Open layout selector (1st click)
-  const tvIcon = page.locator('.fas.fa-tv').first();
-  if (await tvIcon.isVisible({ timeout: 8000 }).catch(() => false)) {
-    await tvIcon.click();
+  // Open layout selector (1st click) via TV icon
+  const tvIconVisible = await page.locator('.fas.fa-tv').first().isVisible({ timeout: 8000 }).catch(() => false);
+  if (tvIconVisible) {
+    await dashboardPage.clickTVIcon();
     await page.waitForTimeout(1500);
-    await page.screenshot({ path: 'screenshots/dash-expand-02-tv-clicked.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('dash-expand-02-tv-clicked');
     console.log('TV icon clicked (1st)');
 
     // 2nd click — the panel may cover the icon so use force + short timeout
-    await tvIcon.click({ force: true, timeout: 5000 }).catch(() => {
+    await page.locator('.fas.fa-tv').first().click({ force: true, timeout: 5000 }).catch(() => {
       console.log('TV icon 2nd click skipped (covered by panel — expected)');
     });
     await page.waitForTimeout(1500);
-    await page.screenshot({ path: 'screenshots/dash-expand-03-tv-clicked-again.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('dash-expand-03-tv-clicked-again');
     console.log('TV icon 2nd click attempted');
   } else {
     console.log('TV icon not found — proceeding to expand button check');
   }
 
-  // Click the expand / fullscreen button (.fas.fa-expand)
-  const expandBtn = page.locator('.fas.fa-expand').first();
-  if (await expandBtn.isVisible({ timeout: 8000 }).catch(() => false)) {
-    await expandBtn.click();
+  // Click the expand / fullscreen button
+  const expandBtnVisible = await page.locator('.fas.fa-expand').first().isVisible({ timeout: 8000 }).catch(() => false);
+  if (expandBtnVisible) {
+    await dashboardPage.clickExpandButton();
     await page.waitForTimeout(2000);
-    await page.screenshot({ path: 'screenshots/dash-expand-04-fullscreen.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('dash-expand-04-fullscreen');
     console.log('Expand button clicked — fullscreen activated');
 
     // Exit fullscreen (Escape or a close button)
     await page.keyboard.press('Escape');
     await page.waitForTimeout(1500);
-    await page.screenshot({ path: 'screenshots/dash-expand-05-fullscreen-exited.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('dash-expand-05-fullscreen-exited');
     console.log('Fullscreen exited via Escape');
   } else {
     console.log('Expand button (.fas.fa-expand) not visible — skipping');
-    await page.screenshot({ path: 'screenshots/dash-expand-04-no-expand-btn.png', fullPage: true }).catch(() => {});
+    await dashboardPage.screenshot('dash-expand-04-no-expand-btn');
   }
 
   console.log('DASHBOARD EXPAND FULLSCREEN TEST PASSED');

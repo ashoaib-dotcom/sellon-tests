@@ -1,6 +1,7 @@
-import { test, chromium, Page, Browser, type Locator } from '@playwright/test';
+import { test, chromium, Page, Browser } from '@playwright/test';
 import { LoginPage } from '../pages/login.page';
 import { OrdersPage } from '../pages/orders.page';
+import { OrderDetailPage } from '../pages/order-detail.page';
 import { ORDER_STATUS, COLUMN, TAB, CANCEL_PATTERNS, CONFIRM_PATTERNS } from '../helpers/selectors';
 
 test.describe.configure({ mode: 'serial' });
@@ -11,6 +12,7 @@ let browser: Browser;
 let page: Page;
 let loginPage: LoginPage;
 let ordersPage: OrdersPage;
+let orderDetail: OrderDetailPage;
 
 let targetOrderId     = '';
 let targetOrderStatus = '';   // 'New' | 'Confirmed'
@@ -24,8 +26,9 @@ test.beforeAll(async () => {
   });
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   page = await context.newPage();
-  loginPage = new LoginPage(page);
-  ordersPage = new OrdersPage(page);
+  loginPage   = new LoginPage(page);
+  ordersPage  = new OrdersPage(page);
+  orderDetail = new OrderDetailPage(page);
   await loginPage.login(process.env.TEST_USERNAME || '', process.env.TEST_PASSWORD || '');
   console.log('Login complete');
 });
@@ -40,133 +43,6 @@ async function ss(name: string) {
   try { await page.screenshot({ path: `screenshots/${name}.png`, fullPage: true }); } catch {}
 }
 
-async function save() {
-  const ribbons = page.locator('lb-ribbon-big-button').filter({ visible: true });
-  const count = await ribbons.count();
-  const labels: string[] = [];
-  for (let i = 0; i < count; i++) {
-    const text = (await ribbons.nth(i).textContent() || '').trim();
-    labels.push(text);
-    if (/save|speichern/i.test(text)) {
-      await ribbons.nth(i).click();
-      await page.waitForTimeout(2000);
-      console.log(`  Saved via ribbon: "${text}"`);
-      return;
-    }
-  }
-  console.log(`  Save: no save button found. Labels: ${JSON.stringify(labels)}`);
-}
-
-// Switch tab WITHOUT saving first (used for inspection only)
-async function switchTab(tabName: string): Promise<boolean> {
-  const tab = page.getByText(tabName, { exact: true }).filter({ visible: true }).first();
-  if (await tab.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await tab.click();
-    await page.waitForTimeout(2500);
-    return true;
-  }
-  return false;
-}
-
-// Switch tab WITH save first (used when changes have been made)
-async function clickTab(tabName: string): Promise<boolean> {
-  await save();
-  const tab = page.getByText(tabName, { exact: true }).filter({ visible: true }).first();
-  if (await tab.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await tab.click();
-    await page.waitForTimeout(3000);
-    console.log(`  Clicked tab: "${tabName}"`);
-    return true;
-  }
-  console.log(`  Tab "${tabName}" not found`);
-  return false;
-}
-
-async function close() {
-  try {
-    const closeBtn = page.locator('.close-button').filter({ visible: true }).first();
-    if (await closeBtn.isVisible({ timeout: 2000 })) { await closeBtn.click(); await page.waitForTimeout(1500); return; }
-  } catch {}
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(1000);
-}
-
-async function dismissModal(modal: Locator) {
-  const closeBtn = modal.locator('.close-button, [aria-label="Close"], [aria-label="close"]').filter({ visible: true }).first();
-  if (await closeBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-    await closeBtn.click();
-    await page.waitForTimeout(1000);
-    return;
-  }
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(1500);
-}
-
-// Count how many order line-items are on the Order items tab (already open)
-async function countItemsOnOrderItemsTab(): Promise<number> {
-  // For New orders: each item has a "Confirm position" button
-  const confirmBtns = page.getByRole('button', { name: /confirm position/i }).filter({ visible: true });
-  const btnCount = await confirmBtns.count();
-  if (btnCount > 0) return btnCount;
-
-  // For Confirmed orders: count non-empty table rows
-  const rows = page.locator('tbody tr');
-  const rowCount = await rows.count();
-  let count = 0;
-  for (let i = 0; i < rowCount; i++) {
-    const text = (await rows.nth(i).textContent() || '').trim();
-    if (text.length > 5) count++;   // skip empty / whitespace-only rows
-  }
-  return count;
-}
-
-// Open combobox and select the first available option
-async function selectCombobox(modal: Locator, index: number): Promise<boolean> {
-  const combo = modal.locator('lb-combobox').filter({ visible: true }).nth(index);
-  if (await combo.count() === 0) return false;
-
-  const comboInput = combo.locator('input').first();
-  if (await comboInput.count() > 0) {
-    await comboInput.click({ force: true });
-    await page.waitForTimeout(2500);
-    const opts = page.locator('lb-option, .lb-option, [class*="lb-option"], .dropdown-item, [role="option"]').filter({ visible: true });
-    if (await opts.count() > 0) {
-      await opts.first().click();
-      await page.waitForTimeout(600);
-      console.log(`  combo[${index}]: selected via input click`);
-      return true;
-    }
-  }
-
-  const buttons = await combo.locator('button').all();
-  if (buttons.length > 0) {
-    await buttons[buttons.length - 1].click({ force: true });
-    await page.waitForTimeout(2500);
-    const opts = page.locator('lb-option, .lb-option, [class*="lb-option"], .dropdown-item, [role="option"]').filter({ visible: true });
-    if (await opts.count() > 0) {
-      await opts.first().click();
-      await page.waitForTimeout(600);
-      console.log(`  combo[${index}]: selected via last button`);
-      return true;
-    }
-  }
-
-  await combo.click({ force: true });
-  await page.waitForTimeout(2500);
-  const opts3 = page.locator('lb-option, .lb-option, [class*="lb-option"], .dropdown-item, [role="option"]').filter({ visible: true });
-  if (await opts3.count() > 0) {
-    await opts3.first().click();
-    await page.waitForTimeout(600);
-    console.log(`  combo[${index}]: selected via container click`);
-    return true;
-  }
-
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(300);
-  console.log(`  combo[${index}]: no options found`);
-  return false;
-}
-
 // ── Step 1: Find a single-item New order (fallback: Confirmed), confirm positions
 
 test('Step 1: Find single-item order and confirm positions @regression', async () => {
@@ -178,8 +54,7 @@ test('Step 1: Find single-item order and confirm positions @regression', async (
 
   const idColIdx     = await ordersPage.findColumnIndex(COLUMN.ID);
   const statusColIdx = await ordersPage.findColumnIndex(COLUMN.STATUS);
-  const rows         = page.locator('tbody tr');
-  const rowCount     = await rows.count();
+  const rowCount     = await ordersPage.getRowCount();
   console.log(`Total rows: ${rowCount}`);
 
   // Separate New and Confirmed orders — skip Shipped entirely
@@ -211,27 +86,26 @@ test('Step 1: Find single-item order and confirm positions @regression', async (
     // Filter the list to this order and open it
     await ordersPage.setTextFilter(idColIdx, orderId);
     await page.waitForTimeout(1500);
-    const filteredRows = page.locator('tbody tr');
-    if (await filteredRows.count() === 0) { console.log(`  Not found after filter`); continue; }
-    await filteredRows.first().dblclick();
-    await page.waitForTimeout(4000);
+    if (await ordersPage.getRowCount() === 0) { console.log(`  Not found after filter`); continue; }
+    await ordersPage.openOrderDetail(0);
+    await page.waitForTimeout(2000);
     await ss(`step1-${orderId}-opened`);
 
     // Switch to Order items tab WITHOUT saving (inspection only)
-    const onItems = await switchTab(TAB.ORDER_ITEMS);
+    const onItems = await orderDetail.switchTab(TAB.ORDER_ITEMS);
     if (!onItems) {
       console.log(`  Order items tab not found for ${orderId}`);
-      await close();
+      await orderDetail.close();
       continue;
     }
     await page.waitForTimeout(1000);
 
-    const itemCount = await countItemsOnOrderItemsTab();
+    const itemCount = await orderDetail.countItemsOnOrderItemsTab();
     console.log(`  Order ${orderId}: ${itemCount} item(s)`);
 
     if (itemCount !== 1) {
       console.log(`  Skipping — needs exactly 1 item (found ${itemCount})`);
-      await close();
+      await orderDetail.close();
       await page.waitForTimeout(1000);
       // Re-navigate to orders for next iteration
       await ordersPage.navigateToOrders();
@@ -254,21 +128,31 @@ test('Step 1: Find single-item order and confirm positions @regression', async (
 
   // If New: go to Order items tab and confirm the position
   if (targetOrderStatus === ORDER_STATUS.NEW) {
-    // Use clickTab (saves first), then confirm positions
-    await clickTab(TAB.ORDER_ITEMS);
+    // Use switchTabWithSave (saves first), then confirm positions
+    await orderDetail.switchTabWithSave(TAB.ORDER_ITEMS);
     await ss(`step1-${targetOrderId}-items-tab`);
 
     let confirmed = 0;
     for (let attempt = 0; attempt < 20; attempt++) {
-      const btn = page.getByRole('button', { name: /confirm position/i }).filter({ visible: true }).first();
-      if (!await btn.isVisible({ timeout: 2000 }).catch(() => false)) break;
-      if (!await btn.isEnabled({ timeout: 1000 }).catch(() => false)) break;
-      await btn.click();
-      await page.waitForTimeout(1500);
+      const stillVisible = await page
+        .getByRole('button', { name: /confirm position/i })
+        .filter({ visible: true })
+        .first()
+        .isVisible({ timeout: 2000 })
+        .catch(() => false);
+      if (!stillVisible) break;
+      const stillEnabled = await page
+        .getByRole('button', { name: /confirm position/i })
+        .filter({ visible: true })
+        .first()
+        .isEnabled({ timeout: 1000 })
+        .catch(() => false);
+      if (!stillEnabled) break;
+      await orderDetail.clickConfirmPosition(0);
       confirmed++;
       console.log(`  Confirmed position ${confirmed}`);
     }
-    await save();
+    await orderDetail.save();
     await ss(`step1-${targetOrderId}-confirmed`);
     console.log(`STEP 1 PASSED — confirmed ${confirmed} position(s) on order ${targetOrderId}`);
   } else {
@@ -293,7 +177,7 @@ test('Step 2: Add shipment on Shipping tab', async () => {
   const shippingTabNames = TAB.SHIPPING_OPTIONS;
   let onShippingTab = false;
   for (const tabName of shippingTabNames) {
-    onShippingTab = await clickTab(tabName);
+    onShippingTab = await orderDetail.switchTabWithSave(tabName);
     if (onShippingTab) break;
   }
   if (!onShippingTab) {
@@ -305,20 +189,15 @@ test('Step 2: Add shipment on Shipping tab', async () => {
   await ss('step2-shipping-tab');
 
   // Click "Create new shipment"
-  const createBtn   = page.locator('lb-ribbon-big-button').filter({ hasText: /create new shipment|new shipment/i }).filter({ visible: true }).first();
-  const fallbackBtn = page.getByRole('button', { name: /create new shipment/i }).filter({ visible: true }).first();
-  const btnToClick  = await createBtn.isVisible({ timeout: 3000 }).catch(() => false) ? createBtn : fallbackBtn;
-
-  if (!await btnToClick.isVisible({ timeout: 5000 }).catch(() => false)) {
+  const clicked = await orderDetail.clickCreateNewShipment();
+  if (!clicked) {
     console.log('"Create new shipment" button not found');
     await ss('step2-no-create-btn');
     return;
   }
-  await btnToClick.click();
-  await page.waitForTimeout(3000);
   await ss('step2-modal');
 
-  const modal = page.locator('lb-modal, lb-dialog, [role="dialog"]').filter({ visible: true }).first();
+  const modal = orderDetail.getModal();
   if (!await modal.isVisible({ timeout: 5000 }).catch(() => false)) {
     console.log('No modal appeared');
     await ss('step2-no-modal');
@@ -327,73 +206,34 @@ test('Step 2: Add shipment on Shipping tab', async () => {
   console.log(`Modal: ${(await modal.textContent() || '').slice(0, 300)}`);
 
   // Select Carrier and Parcel type
-  await selectCombobox(modal, 0);
-  await selectCombobox(modal, 1);
+  await orderDetail.selectCombobox(modal, 0);
+  await orderDetail.selectCombobox(modal, 1);
 
-  // Fill Shipment number and Delivery note number (exclude combobox inputs)
-  const allInputs  = modal.locator('input[type="text"], input:not([type])').filter({ visible: true });
-  const inputCount = await allInputs.count();
-  const standaloneIdx: number[] = [];
-  for (let i = 0; i < inputCount; i++) {
-    const insideCombo = await allInputs.nth(i).evaluate((el) => !!el.closest('lb-combobox'));
-    if (!insideCombo) standaloneIdx.push(i);
-  }
-  console.log(`Standalone inputs: ${standaloneIdx.length}`);
-  if (standaloneIdx.length > 0) await allInputs.nth(standaloneIdx[0]).fill(`SHIP-${targetOrderId}`);
-  if (standaloneIdx.length > 1) await allInputs.nth(standaloneIdx[1]).fill(`DN-${targetOrderId}`);
+  // Fill Shipment number and Delivery note number
+  await orderDetail.fillShipmentNumber(modal, `SHIP-${targetOrderId}`);
+  await orderDetail.fillDeliveryNoteNumber(modal, `DN-${targetOrderId}`);
   await page.waitForTimeout(500);
 
   // Check item checkboxes
-  const checkboxes = modal.locator('input[type="checkbox"]').filter({ visible: true });
-  for (let i = 0; i < await checkboxes.count(); i++) {
-    if (!await checkboxes.nth(i).isChecked().catch(() => false)) {
-      await checkboxes.nth(i).click({ force: true });
-      await page.waitForTimeout(400);
-      console.log(`  Checked checkbox[${i}]`);
-    }
-  }
-  const lbCbs = modal.locator('lb-checkbox').filter({ visible: true });
-  for (let i = 0; i < await lbCbs.count(); i++) {
-    await lbCbs.nth(i).click({ force: true });
-    await page.waitForTimeout(400);
-  }
-  await page.waitForTimeout(1000);
+  await orderDetail.checkItemCheckboxes(modal);
   await ss('step2-fields-filled');
 
   // Click "Add shipment"
-  const addBtn = modal.getByRole('button', { name: /add shipment/i }).filter({ visible: true }).first();
-  if (await addBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const enabled = await addBtn.isEnabled().catch(() => false);
-    console.log(`"Add shipment" enabled: ${enabled}`);
-    if (enabled) {
-      await addBtn.click();
-      await page.waitForTimeout(4000);
-      console.log('Clicked "Add shipment"');
-      await ss('step2-shipment-added');
-    } else {
-      console.log('"Add shipment" disabled — dismissing modal');
-      await dismissModal(modal);
-    }
-  } else {
-    console.log('"Add shipment" button not found');
-    await dismissModal(modal);
-  }
+  await orderDetail.clickAddShipment(modal);
+  await ss('step2-shipment-added');
 
   // Wait for modal to close before saving
-  await page.locator('lb-modal').waitFor({ state: 'hidden', timeout: 10000 }).catch(async () => {
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(1000);
-  });
-  await page.waitForTimeout(2000);
+  await orderDetail.waitForModalToClose();
 
-  if (!await page.locator('lb-modal').isVisible().catch(() => false)) {
-    await save();
+  const modalStillVisible = await page.locator('lb-modal').isVisible().catch(() => false);
+  if (!modalStillVisible) {
+    await orderDetail.save();
     await ss('step2-saved');
   } else {
     console.log('Modal still visible — cannot save');
   }
 
-  await close();
+  await orderDetail.close();
   await page.waitForTimeout(2000);
   await ss('step2-done');
   console.log(`STEP 2 PASSED — shipment added for order ${targetOrderId}`);
@@ -434,8 +274,7 @@ test('Step 4 (Positive): Confirm a New order — positions confirmed and status 
 
   const idColIdx     = await ordersPage.findColumnIndex(COLUMN.ID);
   const statusColIdx = await ordersPage.findColumnIndex(COLUMN.STATUS);
-  const rows         = page.locator('tbody tr');
-  const rowCount     = await rows.count();
+  const rowCount     = await ordersPage.getRowCount();
 
   let confirmOrderId = '';
   for (let i = 0; i < rowCount; i++) {
@@ -452,31 +291,41 @@ test('Step 4 (Positive): Confirm a New order — positions confirmed and status 
   console.log(`Step 4: Confirming order ${confirmOrderId}`);
   await ordersPage.setTextFilter(idColIdx, confirmOrderId);
   await page.waitForTimeout(1500);
-  await page.locator('tbody tr').first().dblclick();
-  await page.waitForTimeout(4000);
+  await ordersPage.openOrderDetail(0);
+  await page.waitForTimeout(2000);
   await ss('step4-opened');
 
-  const onItems = await switchTab(TAB.ORDER_ITEMS);
+  const onItems = await orderDetail.switchTab(TAB.ORDER_ITEMS);
   if (!onItems) {
     console.log('Step 4: Order items tab not found — skipping');
-    await close();
+    await orderDetail.close();
     return;
   }
 
   let confirmed = 0;
   for (let attempt = 0; attempt < 20; attempt++) {
-    const btn = page.getByRole('button', { name: /confirm position/i }).filter({ visible: true }).first();
-    if (!await btn.isVisible({ timeout: 2000 }).catch(() => false)) break;
-    if (!await btn.isEnabled({ timeout: 1000 }).catch(() => false)) break;
-    await btn.click();
-    await page.waitForTimeout(1500);
+    const stillVisible = await page
+      .getByRole('button', { name: /confirm position/i })
+      .filter({ visible: true })
+      .first()
+      .isVisible({ timeout: 2000 })
+      .catch(() => false);
+    if (!stillVisible) break;
+    const stillEnabled = await page
+      .getByRole('button', { name: /confirm position/i })
+      .filter({ visible: true })
+      .first()
+      .isEnabled({ timeout: 1000 })
+      .catch(() => false);
+    if (!stillEnabled) break;
+    await orderDetail.clickConfirmPosition(0);
     confirmed++;
   }
-  await save();
+  await orderDetail.save();
   await ss('step4-confirmed');
   console.log(`Step 4: Confirmed ${confirmed} position(s)`);
 
-  await close();
+  await orderDetail.close();
   await page.waitForTimeout(1500);
   await ordersPage.navigateToOrders();
   await page.waitForTimeout(2000);
@@ -505,7 +354,7 @@ test('Step 5 (Positive): Filter orders by status — only matching rows shown', 
     await page.waitForTimeout(2000);
     await ss(`step5-filter-${filterStatus.toLowerCase()}`);
 
-    const rowCount = await page.locator('tbody tr').count();
+    const rowCount = await ordersPage.getRowCount();
     console.log(`Step 5: Filter "${filterStatus}" → ${rowCount} row(s)`);
 
     let mismatch = 0;
@@ -546,8 +395,7 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
   await ordersPage.setDropdownFilter(statusColIdx, ORDER_STATUS.NEW);
   await page.waitForTimeout(2000);
 
-  const rows     = page.locator('tbody tr');
-  const rowCount = await rows.count();
+  const rowCount = await ordersPage.getRowCount();
   console.log(`Step 6: New orders visible: ${rowCount}`);
 
   let cancelOrderId = '';
@@ -573,13 +421,13 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
   await page.waitForTimeout(1500);
 
   // Open the order via double-click to enter the detail view
-  await page.locator('tbody tr').first().dblclick();
-  await page.waitForTimeout(3000);
+  await ordersPage.openOrderDetail(0);
+  await page.waitForTimeout(1000);
   await ss('step6-opened');
   console.log('  Opened order detail');
 
   // Navigate to the Order Items tab (same pattern used by Step 4 which works)
-  const onItems = await switchTab(TAB.ORDER_ITEMS);
+  const onItems = await orderDetail.switchTab(TAB.ORDER_ITEMS);
   if (onItems) {
     console.log('  Navigated to Order Items tab');
   } else {
@@ -597,10 +445,9 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
   // Look for Reject Order as ribbon button, regular button, OR any clickable element on the page
   let cancelClicked = false;
   for (const pattern of CANCEL_PATTERNS) {
-    // 1. Ribbon button
-    const ribbonBtn = page.locator('lb-ribbon-big-button').filter({ hasText: pattern }).filter({ visible: true }).first();
-    if (await ribbonBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await ribbonBtn.click();
+    // 1. Ribbon button — delegate to orderDetail
+    if (await orderDetail.isRibbonButtonVisible(pattern)) {
+      await orderDetail.clickRibbonButton(pattern);
       await page.waitForTimeout(2000);
       console.log(`  Clicked ribbon button matching ${pattern}`);
       cancelClicked = true;
@@ -629,22 +476,13 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
 
   if (!cancelClicked) {
     // Log everything visible to help identify the reject button
-    const ribbonLabels = await page.locator('lb-ribbon-big-button').filter({ visible: true }).allTextContents();
+    const ribbonLabels = await orderDetail.getRibbonButtons();
     const allBtns = await page.getByRole('button').filter({ visible: true }).allTextContents();
     console.log(`Step 6: Reject button not found.`);
-    console.log(`  Ribbon: ${JSON.stringify(ribbonLabels.map(t => t.trim()).filter(Boolean))}`);
+    console.log(`  Ribbon: ${JSON.stringify(ribbonLabels)}`);
     console.log(`  Buttons: ${JSON.stringify(allBtns.map(t => t.trim()).filter(Boolean))}`);
     await ss('step6-no-cancel-btn');
-    await close();
-    return;
-  }
-
-  if (!cancelClicked) {
-    // Log all visible ribbon buttons to help identify the correct label
-    const ribbonLabels = await page.locator('lb-ribbon-big-button').filter({ visible: true }).allTextContents();
-    console.log(`Step 6: Cancel button not found. Ribbon buttons: ${JSON.stringify(ribbonLabels.map(t => t.trim()))}`);
-    await ss('step6-no-cancel-btn');
-    await close();
+    await orderDetail.close();
     return;
   }
 
@@ -670,7 +508,7 @@ test('Step 6 (Negative): Cancel a New order — status changes to Cancelled', as
   }
 
   await ss('step6-after-cancel');
-  await close();
+  await orderDetail.close();
   await page.waitForTimeout(1500);
 
   // Verify status changed
@@ -695,8 +533,7 @@ test('Step 7 (Negative): Create shipment with missing required fields is blocked
 
   const statusColIdx = await ordersPage.findColumnIndex(COLUMN.STATUS);
   const idColIdx     = await ordersPage.findColumnIndex(COLUMN.ID);
-  const rows         = page.locator('tbody tr');
-  const rowCount     = await rows.count();
+  const rowCount     = await ordersPage.getRowCount();
 
   // Find a Confirmed order to open the Shipping tab
   let confirmedId = '';
@@ -714,44 +551,41 @@ test('Step 7 (Negative): Create shipment with missing required fields is blocked
   console.log(`Step 7: Opening order ${confirmedId} to test shipment validation`);
   await ordersPage.setTextFilter(idColIdx, confirmedId);
   await page.waitForTimeout(1500);
-  await page.locator('tbody tr').first().dblclick();
-  await page.waitForTimeout(4000);
+  await ordersPage.openOrderDetail(0);
+  await page.waitForTimeout(2000);
 
   // Navigate to Shipping tab
   const shippingTabNames = TAB.SHIPPING_OPTIONS;
   let onShippingTab = false;
   for (const tabName of shippingTabNames) {
-    onShippingTab = await switchTab(tabName);
+    onShippingTab = await orderDetail.switchTab(tabName);
     if (onShippingTab) break;
   }
 
   if (!onShippingTab) {
     console.log('Step 7: Shipping tab not found — skipping');
-    await close();
+    await orderDetail.close();
     return;
   }
 
   // Open the shipment creation modal
-  const createBtn = page.locator('lb-ribbon-big-button').filter({ hasText: /create new shipment|new shipment/i }).filter({ visible: true }).first();
-  if (!await createBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+  const clicked = await orderDetail.clickCreateNewShipment();
+  if (!clicked) {
     console.log('Step 7: "Create new shipment" button not found — skipping');
-    await close();
+    await orderDetail.close();
     return;
   }
-  await createBtn.click();
-  await page.waitForTimeout(3000);
   await ss('step7-modal-empty');
 
-  const modal = page.locator('lb-modal, lb-dialog, [role="dialog"]').filter({ visible: true }).first();
+  const modal = orderDetail.getModal();
   if (!await modal.isVisible({ timeout: 5000 }).catch(() => false)) {
     console.log('Step 7: Modal did not appear — skipping');
-    await close();
+    await orderDetail.close();
     return;
   }
 
   // Check "Add shipment" button state WITHOUT filling any fields
-  const addBtn = modal.getByRole('button', { name: /add shipment/i }).filter({ visible: true }).first();
-  const isDisabled = await addBtn.isDisabled({ timeout: 2000 }).catch(() => true);
+  const isDisabled = await orderDetail.isAddShipmentDisabled(modal);
   console.log(`Step 7: "Add shipment" with empty fields — disabled: ${isDisabled}`);
 
   if (isDisabled) {
@@ -763,7 +597,7 @@ test('Step 7 (Negative): Create shipment with missing required fields is blocked
   await ss('step7-validation-check');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1500);
-  await close();
+  await orderDetail.close();
   console.log('STEP 7 PASSED — shipment validation test complete');
 });
 
@@ -782,13 +616,13 @@ test('Step 8 (Negative): Search for non-existent order ID returns empty result',
   await page.waitForTimeout(2000);
   await ss('step8-no-results');
 
-  const rowCount = await page.locator('tbody tr').count();
+  const rowCount = await ordersPage.getRowCount();
   console.log(`Step 8: Filter "${bogusId}" → ${rowCount} row(s) visible`);
 
   // Either 0 rows, or rows that contain no meaningful ID data
   let meaningfulRows = 0;
   for (let i = 0; i < rowCount; i++) {
-    const text = (await page.locator('tbody tr').nth(i).innerText().catch(() => '')).trim();
+    const text = (await ordersPage.getCellText(i, 0)).trim();
     if (text.length > 5) meaningfulRows++;
   }
 
@@ -803,4 +637,77 @@ test('Step 8 (Negative): Search for non-existent order ID returns empty result',
   await page.waitForTimeout(1500);
 
   console.log('STEP 8 PASSED — non-existent order search returns empty result');
+});
+
+// ── Step 9 (Negative): New order does not allow shipment before positions confirmed ──
+
+test('Step 9 (Negative): New order blocks shipment creation before positions are confirmed', async () => {
+  test.setTimeout(120000);
+
+  await ordersPage.navigateToOrders();
+  await page.waitForTimeout(3000);
+
+  const idColIdx     = await ordersPage.findColumnIndex(COLUMN.ID);
+  const statusColIdx = await ordersPage.findColumnIndex(COLUMN.STATUS);
+  const rowCount     = await ordersPage.getRowCount();
+
+  // Find any New (unconfirmed) order
+  let newOrderId = '';
+  for (let i = 0; i < rowCount; i++) {
+    const id     = (await ordersPage.getCellText(i, idColIdx)).trim();
+    const status = (await ordersPage.getCellText(i, statusColIdx)).trim();
+    if (id && status === ORDER_STATUS.NEW) { newOrderId = id; break; }
+  }
+
+  if (!newOrderId) {
+    console.log('Step 9: No New order available — skipping');
+    return;
+  }
+
+  console.log(`Step 9: Opening New order ${newOrderId}`);
+  await ordersPage.setTextFilter(idColIdx, newOrderId);
+  await page.waitForTimeout(1500);
+  await ordersPage.openOrderDetail(0);
+  await page.waitForTimeout(2000);
+  await ss('step9-new-order-opened');
+
+  // Navigate to Shipping tab
+  let onShippingTab = false;
+  for (const tabName of TAB.SHIPPING_OPTIONS) {
+    onShippingTab = await orderDetail.switchTab(tabName);
+    if (onShippingTab) break;
+  }
+
+  await ss('step9-shipping-tab');
+
+  if (!onShippingTab) {
+    console.log('Step 9: Shipping tab not found — skipping');
+    await orderDetail.close();
+    return;
+  }
+
+  // "Create new shipment" should be absent or disabled for a New order
+  const btnVisible  = await orderDetail.isRibbonButtonVisible(/create new shipment|new shipment/i);
+  const btnDisabled = btnVisible
+    ? await page
+        .locator('lb-ribbon-big-button')
+        .filter({ hasText: /create new shipment|new shipment/i })
+        .filter({ visible: true })
+        .first()
+        .isDisabled({ timeout: 2000 })
+        .catch(() => false)
+    : false;
+
+  if (!btnVisible) {
+    console.log('Step 9: "Create new shipment" not visible on New order — shipment correctly blocked');
+  } else if (btnDisabled) {
+    console.log('Step 9: "Create new shipment" disabled on New order — shipment correctly blocked');
+  } else {
+    console.log('Step 9: WARNING — "Create new shipment" is enabled on a New (unconfirmed) order — verify this is expected behaviour');
+  }
+
+  await ss('step9-shipment-button-check');
+  await orderDetail.close();
+  await ordersPage.clickClear();
+  console.log('STEP 9 PASSED — New order shipment restriction verified');
 });

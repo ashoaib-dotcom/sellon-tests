@@ -1,7 +1,47 @@
-import { Page } from '@playwright/test';
+import { Page, expect } from '@playwright/test';
 
 export class NavigationPage {
   constructor(private page: Page) {}
+
+  async openSidebar() {
+    await this.page.locator('.menu-icon').click();
+    await this.page.waitForTimeout(2000);
+  }
+
+  async closeSidebar() {
+    await this.page.keyboard.press('Escape');
+    await this.page.waitForTimeout(1000);
+  }
+
+  async expectMenuIconVisible() {
+    await expect(this.page.locator('.menu-icon')).toBeVisible();
+  }
+
+  async expectAppShellVisible() {
+    await expect(this.page.locator('.menu-icon')).toBeVisible();
+  }
+
+  async openProfileDropdown() {
+    // Click the profile/user button in the top bar
+    const profileButton = this.page.locator(
+      '[data-testid="profile-button"], .profile-button, .user-button, .avatar, [aria-label="Profile"], [aria-label="User menu"]'
+    ).first();
+    await profileButton.click();
+    await this.page.waitForTimeout(1000);
+  }
+
+  async closeProfileDropdown() {
+    await this.page.keyboard.press('Escape');
+    await this.page.waitForTimeout(500);
+  }
+
+  async clickProfileMenuItem(itemText: string) {
+    const menuItem = this.page.getByRole('menuitem', { name: itemText }).or(
+      this.page.locator('[role="menu"], .dropdown-menu, .profile-dropdown').getByText(itemText, { exact: true })
+    ).first();
+    await menuItem.click();
+    await this.page.waitForTimeout(1000);
+  }
 
   async navigateToDashboard() {
     // Dismiss any blocking modal

@@ -56,10 +56,10 @@ test('Export Step 1: Verify products before export', async () => {
   }
 
   // Check export status column shows exclamation marks (not exported yet)
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await dashboardPage.getBodyText();
   console.log('Page has products:', bodyText.includes('Battery char') || bodyText.includes('Stage'));
 
-  try { await page.screenshot({ path: 'screenshots/pom-export-1-before.png', fullPage: true, timeout: 5000 }); } catch {}
+  await dashboardPage.screenshot('pom-export-1-before');
   console.log('STEP 1 PASSED');
 });
 
@@ -69,8 +69,8 @@ test('Export Step 1: Verify products before export', async () => {
 
 test('Export Step 2: Verify Export button exists', async () => {
   test.setTimeout(60000);
-  await expect(page.getByText('Export', { exact: true })).toBeVisible({ timeout: 15000 });
-  try { await page.screenshot({ path: 'screenshots/pom-export-2-button.png', fullPage: true, timeout: 5000 }); } catch {}
+  await expect(productListPage.exportBtn()).toBeVisible({ timeout: 15000 });
+  await dashboardPage.screenshot('pom-export-2-button');
   console.log('STEP 2 PASSED');
 });
 
@@ -81,19 +81,19 @@ test('Export Step 2: Verify Export button exists', async () => {
 test('Export Step 3: Click Export button to export products', async () => {
   test.setTimeout(120000);
 
-  await page.getByText('Export', { exact: true }).click();
+  await productListPage.exportBtn().click();
   await page.waitForTimeout(15000);
 
-  try { await page.screenshot({ path: 'screenshots/pom-export-3-clicked.png', fullPage: true, timeout: 5000 }); } catch {}
+  await dashboardPage.screenshot('pom-export-3-clicked');
 
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await dashboardPage.getBodyText();
   console.log('After export click - has "export":', bodyText.toLowerCase().includes('export'));
   console.log('After export click - has "success":', bodyText.toLowerCase().includes('success'));
   console.log('After export click - has "error":', bodyText.toLowerCase().includes('error'));
 
   // Print all buttons to see if confirmation needed
-  const buttons = await page.getByRole('button').allTextContents();
-  console.log('Buttons after export click:', buttons);
+  const ribbonState = await productListPage.ribbonButtonsVisible();
+  console.log('Buttons after export click:', JSON.stringify(ribbonState));
 
   console.log('STEP 3 PASSED');
 });
@@ -107,19 +107,14 @@ test('Export Step 4: Handle export confirmation dialog', async () => {
 
   // If a confirmation dialog appeared, click OK/Yes/Confirm
   try {
-    const confirmBtn = page.getByRole('button', { name: /OK|Yes|Confirm|Export|Start/i }).first();
-    if (await confirmBtn.isVisible({ timeout: 5000 })) {
-      await confirmBtn.click();
-      console.log('Clicked confirmation button');
-      await page.waitForTimeout(10000);
-    } else {
-      console.log('No confirmation dialog - export may have started directly');
-    }
+    await productListPage.confirmDialog();
+    console.log('Clicked confirmation button');
+    await page.waitForTimeout(10000);
   } catch {
     console.log('No confirmation needed');
   }
 
-  try { await page.screenshot({ path: 'screenshots/pom-export-4-confirmed.png', fullPage: true, timeout: 5000 }); } catch {}
+  await dashboardPage.screenshot('pom-export-4-confirmed');
   console.log('STEP 4 PASSED');
 });
 
@@ -133,8 +128,8 @@ test('Export Step 5: Wait for export to complete', async () => {
   for (let i = 1; i <= 6; i++) {
     await page.waitForTimeout(15000);
     try {
-      try { await page.screenshot({ path: `screenshots/pom-export-5-progress-${i}.png`, fullPage: true, timeout: 10000 }); } catch {}
-      const bodyText = await page.locator('body').innerText({ timeout: 10000 });
+      await dashboardPage.screenshot(`pom-export-5-progress-${i}`);
+      const bodyText = await dashboardPage.getBodyText();
       console.log(`Export check ${i}: complete=${bodyText.toLowerCase().includes('complete')}, success=${bodyText.toLowerCase().includes('success')}`);
 
       if (bodyText.toLowerCase().includes('complete') || bodyText.toLowerCase().includes('success')) {
@@ -161,9 +156,9 @@ test('Export Step 6: Verify export status updated', async () => {
     await navPage.navigateToProducts();
   }
 
-  try { await page.screenshot({ path: 'screenshots/pom-export-6-status.png', fullPage: true, timeout: 5000 }); } catch {}
+  await dashboardPage.screenshot('pom-export-6-status');
 
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await dashboardPage.getBodyText();
 
   // After export, products should show green export status (date instead of exclamation)
   // Products with errors (like DART-S-004 with wrong VAT) should still show exclamation
@@ -180,7 +175,7 @@ test('Export Step 6: Verify export status updated', async () => {
 test('Export Step 7: Verify products with errors were not exported', async () => {
   test.setTimeout(60000);
 
-  const bodyText = await page.locator('body').innerText();
+  const bodyText = await dashboardPage.getBodyText();
 
   // Products with errors should NOT be exported
   // They should still show exclamation mark, not green checkmark
@@ -188,7 +183,7 @@ test('Export Step 7: Verify products with errors were not exported', async () =>
   console.log('Contains "Stage 1":', bodyText.includes('Stage 1'));
   console.log('Contains "Stage 2":', bodyText.includes('Stage 2'));
 
-  try { await page.screenshot({ path: 'screenshots/pom-export-7-error-products.png', fullPage: true, timeout: 5000 }); } catch {}
+  await dashboardPage.screenshot('pom-export-7-error-products');
   console.log('STEP 7 PASSED');
 });
 
@@ -238,6 +233,7 @@ test('Export Step 9: Verify scheduler shows next planned export', async () => {
 
   console.log('STEP 9 PASSED');
 });
+
 // ==========================================
 // NEGATIVE TESTS
 // ==========================================
@@ -273,7 +269,7 @@ test('Export negative: export dialog can be cancelled without exporting', async 
 
   // Return to the main app before navigating (prior test may have gone to an external URL)
   try {
-    const menuIcon = page.locator('.menu-icon');
+    const menuIcon = dashboardPage.getMenuIcon();
     const visible = await menuIcon.isVisible({ timeout: 5000 });
     if (!visible) {
       await page.goto(process.env.BASE_URL || '', { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -287,22 +283,16 @@ test('Export negative: export dialog can be cancelled without exporting', async 
   await navPage.navigateToProducts();
   await productListPage.expectTableVisible();
 
-  const exportBtn = page.getByText('Export', { exact: true }).filter({ visible: true }).first();
+  const exportBtn = productListPage.exportBtn();
   if (await exportBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
     await exportBtn.click();
     await page.waitForTimeout(2000);
 
-    // Cancel / dismiss the dialog
-    const cancelBtn = page.getByText('Cancel', { exact: true }).filter({ visible: true }).first();
-    const closeBtn  = page.locator('[class*="close"], [class*="dismiss"]').filter({ visible: true }).first();
-
-    if (await cancelBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await cancelBtn.click();
-      console.log('Export cancelled via Cancel button');
-    } else if (await closeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await closeBtn.click();
-      console.log('Export cancelled via close button');
-    } else {
+    // Cancel / dismiss the dialog via POM
+    try {
+      await productListPage.dismissDialog();
+      console.log('Export cancelled via dismissDialog()');
+    } catch {
       await page.keyboard.press('Escape');
       console.log('Export cancelled via Escape');
     }
@@ -315,6 +305,6 @@ test('Export negative: export dialog can be cancelled without exporting', async 
     console.log('Export button not visible — skipping');
   }
 
-  try { await page.screenshot({ path: 'screenshots/pom-export-neg-cancelled.png', fullPage: true, timeout: 5000 }); } catch {}
+  await dashboardPage.screenshot('pom-export-neg-cancelled');
   console.log('EXPORT NEG CANCEL TEST PASSED');
 });

@@ -412,4 +412,39 @@ export class ProductFormPage {
                      lower.includes('min.');
     expect(hasError, 'Expected page to show a validation error').toBeTruthy();
   }
+
+  // Read the current value of a labeled input field.
+  // Returns empty string if the field cannot be found.
+  async getFieldValue(labelText: string): Promise<string> {
+    try {
+      const byLabel = this.page.getByLabel(labelText, { exact: false }).first();
+      if (await byLabel.count() > 0) {
+        return byLabel.inputValue().catch(() => '');
+      }
+    } catch {}
+    const idx = await this.findInputIndex(labelText);
+    if (idx >= 0) {
+      return this.page.locator(
+        'input:not([type="hidden"]):not([type="checkbox"]), textarea'
+      ).nth(idx).inputValue().catch(() => '');
+    }
+    return '';
+  }
+
+  // Assert all expected Master data tab fields are visible.
+  async expectMasterDataTabFields() {
+    await expect(this.page.getByText('GTIN', { exact: true })).toBeVisible();
+    await expect(this.page.getByText('Provider key', { exact: true }).first()).toBeVisible();
+    await expect(this.page.getByText('Brand', { exact: true })).toBeVisible();
+    await expect(this.page.getByText('Master data', { exact: true })).toBeVisible();
+    await expect(this.page.getByText('Supplementary data', { exact: true })).toBeVisible();
+    await expect(this.page.getByText('Price & stock', { exact: true })).toBeVisible();
+    await expect(this.page.getByText('Media', { exact: true })).toBeVisible();
+  }
+
+  // Assert expected Price & stock tab fields are visible.
+  async expectPriceStockTabFields() {
+    await expect(this.page.getByText('Selling price', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(this.page.getByText('VAT', { exact: true })).toBeVisible();
+  }
 }

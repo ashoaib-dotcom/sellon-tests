@@ -253,21 +253,17 @@ test('Edge Case 1: Delete without selecting any product', async () => {
   // Click delete with no row selected
   await productListPage.clickDelete();
 
-  const bodyText = await page.locator('body').innerText();
-  const hasMsg =
-    bodyText.toLowerCase().includes('select') ||
-    bodyText.toLowerCase().includes('no item') ||
-    bodyText.toLowerCase().includes('please') ||
-    bodyText.toLowerCase().includes('confirm') ||
-    bodyText.toLowerCase().includes('delete');
+  // Check for any visible notification or message via POM helpers.
+  // isSuccessVisible covers toast/notification/alert elements;
+  // isMassEditModalVisible covers any dialog that appeared.
+  const hasNotification = await productListPage.isSuccessVisible(3000);
+  const hasDialogOpen   = await productListPage.isMassEditModalVisible(3000);
+  const hasMsg = hasNotification || hasDialogOpen;
 
   console.log(`Message shown after unselected delete: ${hasMsg}`);
 
-  // Dismiss any dialog that opened
-  const confirmBtn = page.getByRole('button', { name: /^(Yes|OK|No|Cancel|Close)$/i }).first();
-  if (await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await productListPage.dismissDialog();
-  }
+  // Dismiss any dialog that opened (no-op if nothing is visible)
+  await productListPage.dismissDialog().catch(() => {});
 
   try { await page.screenshot({ path: 'screenshots/del-edge1-no-selection.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('EDGE CASE 1 PASSED — No-selection delete handled');

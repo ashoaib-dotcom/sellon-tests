@@ -1,6 +1,6 @@
 import { test, chromium, Page, Browser } from '@playwright/test';
 import { LoginPage } from '../pages/login.page';
-import { OrdersPage } from '../pages/orders.page';
+import { OrdersPage, RIBBON } from '../pages/orders.page';
 
 let browser: Browser;
 let page: Page;
@@ -77,15 +77,13 @@ test('Orders: should display order page content', async () => {
 test('Orders: should open order detail by clicking a row', async () => {
   test.setTimeout(120000);
 
-  const firstRow = page.locator('tbody tr').first();
-  const rowCount = await firstRow.count();
+  const rowCount = await ordersPage.getRowCount();
   if (rowCount === 0) {
     console.log('No orders in list — skipping detail test');
     return;
   }
 
-  await firstRow.click();
-  await page.waitForTimeout(5000);
+  await ordersPage.openOrderDetail(0);
 
   const bodyText = await ordersPage.getBodyText();
   // Order detail should contain position/product info
@@ -111,16 +109,15 @@ test('Orders export: without selection — all orders exported as xlsx', async (
     console.log('navigateToOrders failed — skipping export test');
     return;
   }
-  await page.waitForTimeout(3000);
+  await ordersPage.waitForLoad(3);
 
-  const rowCount = await page.locator('tbody tr').count();
+  const rowCount = await ordersPage.getRowCount();
   if (rowCount === 0) {
     console.log('No orders in table — skipping export test');
     return;
   }
 
-  const exportBtn = page.getByText('Export', { exact: true });
-  if (!await exportBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+  if (!await ordersPage.exportBtn().isVisible({ timeout: 5000 }).catch(() => false)) {
     console.log('Export button not found on orders page — skipping');
     return;
   }
@@ -128,10 +125,10 @@ test('Orders export: without selection — all orders exported as xlsx', async (
   // Listen for download before clicking
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 30000 }).catch(() => null),
-    exportBtn.click(),
+    ordersPage.clickExportAll(),
   ]);
 
-  await page.waitForTimeout(5000);
+  await ordersPage.waitForLoad(5);
 
   if (download) {
     const filename = download.suggestedFilename();
@@ -155,36 +152,28 @@ test('Orders export: with one selected order — only that order exported', asyn
     console.log('navigateToOrders failed — skipping');
     return;
   }
-  await page.waitForTimeout(3000);
+  await ordersPage.waitForLoad(3);
 
-  const firstRow = page.locator('tbody tr').first();
-  if (await firstRow.count() === 0) {
+  if (await ordersPage.getRowCount() === 0) {
     console.log('No orders — skipping');
     return;
   }
 
   // Select the first order row checkbox
-  const checkbox = firstRow.locator('input[type="checkbox"]').first();
-  if (await checkbox.count() > 0) {
-    await checkbox.click();
-  } else {
-    await firstRow.locator('td').first().click();
-  }
-  await page.waitForTimeout(500);
+  await ordersPage.selectRowCheckbox(0);
   console.log('Selected one order row');
 
-  const exportBtn = page.getByText('Export', { exact: true });
-  if (!await exportBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+  if (!await ordersPage.exportBtn().isVisible({ timeout: 5000 }).catch(() => false)) {
     console.log('Export button not visible — skipping');
     return;
   }
 
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 30000 }).catch(() => null),
-    exportBtn.click(),
+    ordersPage.clickExport(),
   ]);
 
-  await page.waitForTimeout(5000);
+  await ordersPage.waitForLoad(5);
 
   if (download) {
     const filename = download.suggestedFilename();
@@ -205,10 +194,9 @@ test('Orders export: with multiple selected orders — only selected exported', 
     console.log('navigateToOrders failed — skipping');
     return;
   }
-  await page.waitForTimeout(3000);
+  await ordersPage.waitForLoad(3);
 
-  const rows = page.locator('tbody tr');
-  const count = await rows.count();
+  const count = await ordersPage.getRowCount();
   if (count < 2) {
     console.log('Not enough orders to select multiple — skipping');
     return;
@@ -216,29 +204,21 @@ test('Orders export: with multiple selected orders — only selected exported', 
 
   // Select first two rows
   for (const idx of [0, 1]) {
-    const row = rows.nth(idx);
-    const checkbox = row.locator('input[type="checkbox"]').first();
-    if (await checkbox.count() > 0) {
-      await checkbox.click();
-    } else {
-      await row.locator('td').first().click();
-    }
-    await page.waitForTimeout(300);
+    await ordersPage.selectRowCheckbox(idx);
   }
   console.log('Selected 2 order rows');
 
-  const exportBtn = page.getByText('Export', { exact: true });
-  if (!await exportBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+  if (!await ordersPage.exportBtn().isVisible({ timeout: 5000 }).catch(() => false)) {
     console.log('Export button not visible — skipping');
     return;
   }
 
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 30000 }).catch(() => null),
-    exportBtn.click(),
+    ordersPage.clickExport(),
   ]);
 
-  await page.waitForTimeout(5000);
+  await ordersPage.waitForLoad(5);
 
   if (download) {
     const filename = download.suggestedFilename();
@@ -251,6 +231,7 @@ test('Orders export: with multiple selected orders — only selected exported', 
   await ordersPage.screenshot('pom-orders-export-multi');
   console.log('ORDERS EXPORT WITH MULTIPLE SELECTION PASSED');
 });
+
 // ==========================================
 // NEGATIVE TESTS
 // ==========================================
@@ -258,18 +239,18 @@ test('Orders export: with multiple selected orders — only selected exported', 
 test('Orders negative: filter with non-existent order ID shows no results', async () => {
   test.setTimeout(60000);
 
-  // Try filtering by an order ID that cannot exist
-  const filterInput = page.locator('thead tr').nth(1).locator('input').first();
+  // Try filtering by an order ID that cannot exist using the first filter column
+  const filterInput = ordersPage.filterCell(0).locator('input').first();
   if (await filterInput.count() > 0) {
     await filterInput.fill('ZZZNOMATCH99999');
-    await page.waitForTimeout(2000);
-    const bodyText = await page.locator('body').innerText();
-    const rowCount = await page.locator('tbody tr').count();
+    await ordersPage.waitForLoad(2);
+    const bodyText = await ordersPage.getBodyText();
+    const rowCount = await ordersPage.getRowCount();
     console.log('Rows after non-existent filter:', rowCount);
     console.log('Shows empty state:', rowCount === 0 || bodyText.toLowerCase().includes('no') || bodyText.toLowerCase().includes('empty'));
     // Restore
     await filterInput.clear();
-    await page.waitForTimeout(1000);
+    await ordersPage.waitForLoad(1);
   } else {
     console.log('No filter input found — skipping');
   }
@@ -287,54 +268,58 @@ test('Orders: double-arrow button collapses and restores the ribbon toolbar', as
     console.log('navigateToOrders failed — skipping');
     return;
   }
-  await page.waitForTimeout(3000);
+  await ordersPage.waitForLoad(3);
 
   // Ribbon buttons that should be visible by default
-  const ribbonButtons = ['Edit', 'Cancel', 'Export', 'Refresh'];
-  for (const label of ribbonButtons) {
-    const visible = await page.getByText(label, { exact: true }).filter({ visible: true }).first()
-      .isVisible({ timeout: 3000 }).catch(() => false);
-    console.log(`  Before collapse — "${label}" visible: ${visible}`);
+  const ribbonLabels = [RIBBON.EDIT, RIBBON.CANCEL, RIBBON.EXPORT, RIBBON.REFRESH];
+  const beforeVisibility = await ordersPage.ribbonButtonsVisible();
+  for (const label of ribbonLabels) {
+    console.log(`  Before collapse — "${label}" visible: ${beforeVisibility[label] ?? false}`);
   }
 
-  // Collapse icon (.fa-angle-double-up) / expand icon (.fa-angle-double-down)
-  // — confirmed by codegen recording
-  const collapseIcon = page.locator('.fal.fa-angle-double-up').first();
-  const expandIcon   = page.locator('.fal.fa-angle-double-down').first();
-
-  if (!await collapseIcon.isVisible({ timeout: 5000 }).catch(() => false)) {
+  // Attempt to collapse — skip if the collapse icon is absent
+  try {
+    await ordersPage.clickCollapseRibbon();
+  } catch {
     console.log('  Collapse button (.fal.fa-angle-double-up) not found — skipping');
     await ordersPage.screenshot('orders-ribbon-toggle-skip');
     return;
   }
-
-  // Click to collapse
-  await collapseIcon.click();
-  await page.waitForTimeout(1500);
+  await ordersPage.waitForLoad(1.5);
   await ordersPage.screenshot('orders-ribbon-collapsed');
 
   let hiddenCount = 0;
-  for (const label of ribbonButtons) {
-    const visible = await page.getByText(label, { exact: true }).filter({ visible: true }).first()
-      .isVisible({ timeout: 1000 }).catch(() => false);
+  for (const label of ribbonLabels) {
+    let visible = false;
+    try {
+      await ordersPage.expectRibbonButtonVisible(label);
+      visible = true;
+    } catch {
+      visible = false;
+    }
     console.log(`  After collapse — "${label}" visible: ${visible}`);
     if (!visible) hiddenCount++;
   }
-  console.log(`  ${hiddenCount}/${ribbonButtons.length} ribbon buttons hidden after collapse`);
+  console.log(`  ${hiddenCount}/${ribbonLabels.length} ribbon buttons hidden after collapse`);
 
   // Click the expand icon to restore the ribbon
-  await expandIcon.click();
-  await page.waitForTimeout(1500);
+  await ordersPage.clickExpandRibbon();
+  await ordersPage.waitForLoad(1.5);
   await ordersPage.screenshot('orders-ribbon-expanded');
 
   let restoredCount = 0;
-  for (const label of ribbonButtons) {
-    const visible = await page.getByText(label, { exact: true }).filter({ visible: true }).first()
-      .isVisible({ timeout: 2000 }).catch(() => false);
+  for (const label of ribbonLabels) {
+    let visible = false;
+    try {
+      await ordersPage.expectRibbonButtonVisible(label);
+      visible = true;
+    } catch {
+      visible = false;
+    }
     console.log(`  After expand — "${label}" visible: ${visible}`);
     if (visible) restoredCount++;
   }
-  console.log(`  ${restoredCount}/${ribbonButtons.length} ribbon buttons restored after expand`);
+  console.log(`  ${restoredCount}/${ribbonLabels.length} ribbon buttons restored after expand`);
 
   console.log('ORDERS RIBBON COLLAPSE TOGGLE PASSED');
 });
@@ -347,23 +332,22 @@ test('Orders negative: clicking export with no rows selected exports all (no cra
     console.log('navigateToOrders failed — skipping');
     return;
   }
-  await page.waitForTimeout(3000);
+  await ordersPage.waitForLoad(3);
 
-  const exportBtn = page.getByText('Export', { exact: true }).filter({ visible: true }).first();
-  if (await exportBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+  if (await ordersPage.exportBtn().isVisible({ timeout: 5000 }).catch(() => false)) {
     // Clicking export with no selection should either prompt or export all — must not crash
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 10000 }).catch(() => null),
-      exportBtn.click(),
+      ordersPage.clickExport(),
     ]);
-    await page.waitForTimeout(3000);
+    await ordersPage.waitForLoad(3);
 
-    const hasDialog = await page.locator('[class*="modal"], [class*="dialog"]').filter({ visible: true }).count() > 0;
+    const bodyText = await ordersPage.getBodyText();
+    const hasDialog = bodyText.toLowerCase().includes('modal') || bodyText.toLowerCase().includes('dialog');
     console.log('Export triggered without selection — dialog shown:', hasDialog, '| download triggered:', !!download);
 
     // Dismiss any dialog
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(1000);
+    await ordersPage.pressEscape();
   } else {
     console.log('Export button not visible — skipping');
   }

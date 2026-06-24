@@ -44,51 +44,13 @@ test.afterAll(async () => {
 
 async function openImportDialog(): Promise<boolean> {
   try {
-    const fileInput = page.locator('input[type="file"]');
-    if (await fileInput.count() > 0) return true; // dialog already open
+    if (await productListPage.isFileInputPresent()) return true; // dialog already open
     await productListPage.clickImport();
     await page.waitForTimeout(2000);
-    return await page.locator('input[type="file"]').count() > 0;
+    return await productListPage.isFileInputPresent();
   } catch {
     return false;
   }
-}
-
-async function closeImportDialog() {
-  for (const name of [/Cancel|Close|Back|Done|Finish|OK/i]) {
-    try {
-      const btn = page.getByRole('button', { name }).first();
-      if (await btn.isVisible({ timeout: 2000 })) { await btn.click(); await page.waitForTimeout(2000); return; }
-    } catch {}
-  }
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(1500);
-}
-
-async function runImport(): Promise<boolean> {
-  const possibleButtons = ['Run', 'Start', 'Execute', 'Import', 'Upload', 'OK', 'Confirm', 'Submit'];
-  for (const btnName of possibleButtons) {
-    try {
-      const btn = page.getByRole('button', { name: btnName }).first();
-      if (await btn.isVisible({ timeout: 2000 }) && await btn.isEnabled({ timeout: 500 }).catch(() => false)) {
-        await btn.click();
-        await page.waitForTimeout(3000);
-        return true;
-      }
-    } catch {}
-  }
-  return false;
-}
-
-async function waitForImportResult(timeoutMs = 120000): Promise<'success' | 'error' | 'timeout'> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    await page.waitForTimeout(5000);
-    const body = (await page.locator('body').innerText({ timeout: 10000 }).catch(() => '')).toLowerCase();
-    if (body.includes('complete') || body.includes('success') || body.includes('finished')) return 'success';
-    if (body.includes('error') || body.includes('invalid') || body.includes('failed')) return 'error';
-  }
-  return 'timeout';
 }
 
 // ── CSV import (existing happy path) ─────────────────────────────────────────
@@ -103,8 +65,8 @@ test('Import Step 1: Open import dialog', async () => {
 
 test('Import Step 2: Try import without file — expect validation error', async () => {
   test.setTimeout(60000);
-  await runImport();
-  const body = (await page.locator('body').innerText()).toLowerCase();
+  await productListPage.clickImportRunButton();
+  const body = await productListPage.getBodyText();
   const hasError = body.includes('error') || body.includes('required') || body.includes('file') || body.includes('invalid');
   console.log('Validation error shown for empty submit:', hasError);
   try { await page.screenshot({ path: 'screenshots/pom-import-2-no-file-error.png', fullPage: true, timeout: 5000 }); } catch {}
@@ -114,22 +76,21 @@ test('Import Step 2: Try import without file — expect validation error', async
 test('Import Step 3: Upload CSV file and run import', async () => {
   test.setTimeout(300000);
   const csvPath = path.resolve('test-data/import-products.csv');
-  const fileInput = page.locator('input[type="file"]').first();
 
-  if (await fileInput.count() === 0) {
+  if (!await productListPage.isFileInputPresent()) {
     await openImportDialog();
   }
 
-  if (await fileInput.count() > 0) {
-    await fileInput.setInputFiles(csvPath);
+  if (await productListPage.isFileInputPresent()) {
+    await productListPage.attachFile(csvPath);
     console.log('CSV file attached:', path.basename(csvPath));
     await page.waitForTimeout(2000);
     try { await page.screenshot({ path: 'screenshots/pom-import-3-csv-attached.png', fullPage: true, timeout: 5000 }); } catch {}
 
-    const started = await runImport();
+    const started = await productListPage.clickImportRunButton();
     console.log('Import started:', started);
 
-    const result = await waitForImportResult();
+    const result = await productListPage.waitForImportResult();
     console.log('CSV import result:', result);
     try { await page.screenshot({ path: 'screenshots/pom-import-3-csv-result.png', fullPage: true, timeout: 5000 }); } catch {}
   } else {
@@ -140,7 +101,7 @@ test('Import Step 3: Upload CSV file and run import', async () => {
 
 test('Import Step 4: Close dialog after CSV import', async () => {
   test.setTimeout(60000);
-  await closeImportDialog();
+  await productListPage.closeImportDialog();
   try { await page.screenshot({ path: 'screenshots/pom-import-4-closed.png', fullPage: true, timeout: 5000 }); } catch {}
   console.log('STEP 4 PASSED');
 });
@@ -164,21 +125,23 @@ test('Import Step 5: Upload XLSX file — expect successful import', async () =>
 
   try { await page.screenshot({ path: 'screenshots/pom-import-5-xlsx-dialog.png', fullPage: true, timeout: 5000 }); } catch {}
 
-  const fileInput = page.locator('input[type="file"]').first();
-  await fileInput.setInputFiles(xlsxPath);
+  await productListPage.attachFile(xlsxPath);
   console.log('XLSX file attached:', path.basename(xlsxPath));
   await page.waitForTimeout(2000);
   try { await page.screenshot({ path: 'screenshots/pom-import-5-xlsx-attached.png', fullPage: true, timeout: 5000 }); } catch {}
 
   // Verify no immediate format rejection before clicking run
-  const bodyAfterAttach = (await page.locator('body').innerText()).toLowerCase();
-  const rejectedImmediately = bodyAfterAttach.includes('invalid') || bodyAfterAttach.includes('not supported') || bodyAfterAttach.includes('wrong format');
+  const bodyAfterAttach = await productListPage.getBodyText();
+  const rejectedImmediately =
+    bodyAfterAttach.includes('invalid') ||
+    bodyAfterAttach.includes('not supported') ||
+    bodyAfterAttach.includes('wrong format');
   console.log('XLSX rejected immediately on attach:', rejectedImmediately);
 
-  const started = await runImport();
+  const started = await productListPage.clickImportRunButton();
   console.log('XLSX import started:', started);
 
-  const result = await waitForImportResult();
+  const result = await productListPage.waitForImportResult();
   console.log('XLSX import result:', result);
   try { await page.screenshot({ path: 'screenshots/pom-import-5-xlsx-result.png', fullPage: true, timeout: 5000 }); } catch {}
 
@@ -190,7 +153,7 @@ test('Import Step 5: Upload XLSX file — expect successful import', async () =>
     console.log('XLSX import showed an error — system responded clearly (not a hang)');
   }
 
-  await closeImportDialog();
+  await productListPage.closeImportDialog();
   console.log('STEP 5 PASSED');
 });
 
@@ -222,10 +185,8 @@ test('Import Step 6: Upload PNG file — expect format rejection', async () => {
 
   try { await page.screenshot({ path: 'screenshots/pom-import-6-png-dialog.png', fullPage: true, timeout: 5000 }); } catch {}
 
-  const fileInput = page.locator('input[type="file"]').first();
-
   // Check if the file input restricts accepted types (browser-level validation)
-  const acceptAttr = await fileInput.getAttribute('accept').catch(() => '');
+  const acceptAttr = await productListPage.getFileInputAccept();
   console.log('File input accept attribute:', acceptAttr || '(none)');
 
   // Check if PNG is excluded by the accept attribute
@@ -234,12 +195,12 @@ test('Import Step 6: Upload PNG file — expect format rejection', async () => {
     : false;
   console.log('PNG blocked at browser level by accept attr:', pngBlockedByBrowser);
 
-  await fileInput.setInputFiles(pngPath);
+  await productListPage.attachFile(pngPath);
   console.log('PNG file attached');
   await page.waitForTimeout(3000);
   try { await page.screenshot({ path: 'screenshots/pom-import-6-png-attached.png', fullPage: true, timeout: 5000 }); } catch {}
 
-  const bodyAfterAttach = (await page.locator('body').innerText()).toLowerCase();
+  const bodyAfterAttach = await productListPage.getBodyText();
   const rejectedOnAttach =
     bodyAfterAttach.includes('invalid') ||
     bodyAfterAttach.includes('not supported') ||
@@ -252,9 +213,9 @@ test('Import Step 6: Upload PNG file — expect format rejection', async () => {
 
   if (!rejectedOnAttach) {
     // Try submitting — the server or dialog should reject it
-    await runImport();
+    await productListPage.clickImportRunButton();
     await page.waitForTimeout(5000);
-    const bodyAfterRun = (await page.locator('body').innerText()).toLowerCase();
+    const bodyAfterRun = await productListPage.getBodyText();
     const rejectedAfterRun =
       bodyAfterRun.includes('invalid') ||
       bodyAfterRun.includes('error') ||
@@ -272,7 +233,7 @@ test('Import Step 6: Upload PNG file — expect format rejection', async () => {
   }
 
   console.log('PNG file correctly rejected by the system');
-  await closeImportDialog();
+  await productListPage.closeImportDialog();
   fs.unlinkSync(pngPath);
   console.log('STEP 6 PASSED');
 });
