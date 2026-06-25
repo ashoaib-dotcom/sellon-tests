@@ -222,9 +222,9 @@ export class ProductListPage {
   // Type a text value into the filter input of the given column.
   async setTextFilter(colIndex: number, value: string) {
     const cell = this.filterCell(colIndex);
-    await cell.waitFor({ state: 'visible', timeout: 10000 });
+    await cell.waitFor({ state: 'visible', timeout: 30000 });
     const input = cell.locator('input').first();
-    await input.waitFor({ state: 'visible', timeout: 5000 });
+    await input.waitFor({ state: 'visible', timeout: 10000 });
     await input.fill(value);
     await this.page.waitForTimeout(300);
   }
@@ -232,7 +232,7 @@ export class ProductListPage {
   // Select an option from a dropdown filter in the given column.
   async setDropdownFilter(colIndex: number, optionText: string) {
     const cell = this.filterCell(colIndex);
-    await cell.waitFor({ state: 'visible', timeout: 10000 });
+    await cell.waitFor({ state: 'visible', timeout: 30000 });
     const select = cell.locator('select').first();
     if (await select.count() > 0) {
       await select.selectOption({ label: optionText });

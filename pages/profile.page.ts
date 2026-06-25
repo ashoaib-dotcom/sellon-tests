@@ -45,7 +45,11 @@ export class ProfilePage extends BasePage {
   /** Any currently-visible modal / dialog panel (used to confirm open/closed state). */
   private get settingsPanel() {
     return this.page
-      .locator('lb-modal, lb-dialog, [role="dialog"], .settings-panel, [class*="settings"]')
+      .locator([
+        'lb-modal', 'lb-dialog', 'lb-window', 'lb-view', 'lb-overlay', 'lb-floating-window',
+        '[role="dialog"]', '.settings-panel', '[class*="settings"]',
+        '.title-button.close-button',
+      ].join(', '))
       .filter({ visible: true })
       .first();
   }

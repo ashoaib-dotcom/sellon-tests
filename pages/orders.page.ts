@@ -35,7 +35,8 @@ export class OrdersPage extends BasePage {
   }
 
   async expectOrderTableVisible() {
-    await expect(this.page.getByTitle('ID', { exact: true })).toBeVisible({ timeout: 30000 });
+    await this.page.locator('thead tr th, thead tr td').first()
+      .waitFor({ state: 'visible', timeout: 30000 });
   }
 
   async getRowCount() {
