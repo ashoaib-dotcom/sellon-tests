@@ -1,4 +1,5 @@
 stages:
+  - smoke
   - test
 
 # Shell executor runner — install Node.js via nvm if not already present
@@ -76,100 +77,127 @@ default:
     - if: $CI_PIPELINE_SOURCE == "web"
     - if: $CI_PIPELINE_SOURCE == "schedule"
 
+# ── Smoke gate ───────────────────────────────────────────────────────────────
+# Runs first (stage: smoke). All other jobs have needs: [smoke] so they are
+# blocked immediately if any of the five critical checks fail.
+
+smoke:
+  stage: smoke
+  extends: .test-template
+  timeout: 15 minutes
+  variables:
+    TEST_FILE: tests/00-smoke.spec.ts
+
 # ── Test suites ───────────────────────────────────────────────────────────────
 
 dashboard:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/02-dashboard-pom.spec.ts
 
 login:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/01-login-pom.spec.ts
 
 orders:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/12-orders-pom.spec.ts
 
 orders-filters:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/13-orders-filters-pom.spec.ts
 
 product-filters:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/05-product-filters-pom.spec.ts
 
 product-edit:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/04-product-edit-pom.spec.ts
 
 product-create:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/03-product-create-pom.spec.ts
 
 product-import:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/07-product-import-pom.spec.ts
 
 stock-import:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/08-stock-import-pom.spec.ts
 
 export:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/09-export-pom.spec.ts
 
 product-validations:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/06-product-validations-pom.spec.ts
 
 order-workflow:
   extends: .test-template
   timeout: 90 minutes
-  needs: [sftp-upload]
+  needs: [smoke, sftp-upload]
   variables:
     TEST_FILE: tests/11-order-workflow-pom.spec.ts
 
 sftp-upload:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/10-sftp-upload-pom.spec.ts
 
 product-delete:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/16-product-delete-pom.spec.ts
 
 split-shipment:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/14-split-shipment-pom.spec.ts
 
 profile:
   extends: .test-template
+  needs: [smoke]
   variables:
     TEST_FILE: tests/15-profile-pom.spec.ts
 
 admin-cleanup:
   extends: .test-template
   timeout: 15 minutes
-  needs: [sftp-upload, order-workflow]
+  needs: [smoke, sftp-upload, order-workflow]
   variables:
     TEST_FILE: tests/17-admin-cleanup-pom.spec.ts
 
 regression:
   extends: .test-template
   timeout: 30 minutes
+  needs: [smoke]
   script:
     - *gen-env
     - *debug-env
