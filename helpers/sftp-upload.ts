@@ -22,8 +22,8 @@ export function sftpConfigFromEnv(): SftpConfig {
     username:    process.env.SFTP_USERNAME || '',
     password:    process.env.SFTP_PASSWORD,
     privateKey:  process.env.SFTP_PRIVATE_KEY,
-    remoteInDir: process.env.SFTP_REMOTE_IN_DIR  || '/incoming',
-    remoteOutDir:process.env.SFTP_REMOTE_OUT_DIR || '/outgoing',
+    remoteInDir:  (process.env.SFTP_REMOTE_IN_DIR  || '/incoming').trim(),
+    remoteOutDir: (process.env.SFTP_REMOTE_OUT_DIR || '/outgoing').trim(),
   };
 }
 

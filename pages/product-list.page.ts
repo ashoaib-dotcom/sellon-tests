@@ -215,8 +215,9 @@ export class ProductListPage {
 
   // Get the filter row cell at a given 0-based column index.
   // The filter row is the second <tr> inside <thead>.
+  // Uses both th and td so the selector works regardless of which element the app renders.
   filterCell(colIndex: number) {
-    return this.page.locator(`thead tr:nth-child(2) td:nth-child(${colIndex + 1})`);
+    return this.page.locator('thead tr').nth(1).locator('th, td').nth(colIndex);
   }
 
   // Type a text value into the filter input of the given column.
