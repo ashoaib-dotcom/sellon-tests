@@ -82,7 +82,7 @@ test.beforeAll(async () => {
   const fixtureFiles = fs.existsSync(fixturesDir)
     ? fs.readdirSync(fixturesDir)
         .filter(f => f.startsWith('GORDP_') && f.endsWith('.xml'))
-        .sort()
+        .sort(() => Math.random() - 0.5)   // shuffle so each run picks a different primary order
         .map(f => path.join(fixturesDir, f))
     : [];
 

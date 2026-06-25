@@ -103,8 +103,9 @@ export class OrderDetailPage extends BasePage {
 
   /**
    * Click the first ribbon button whose text matches the given pattern.
+   * Returns true if a button was found and clicked, false otherwise.
    */
-  async clickRibbonButton(pattern: RegExp): Promise<void> {
+  async clickRibbonButton(pattern: RegExp): Promise<boolean> {
     const ribbons = this.page.locator('lb-ribbon-big-button').filter({ visible: true });
     const count = await ribbons.count();
     for (let i = 0; i < count; i++) {
@@ -113,10 +114,37 @@ export class OrderDetailPage extends BasePage {
         await ribbons.nth(i).click();
         await this.page.waitForTimeout(2000);
         console.log(`  Clicked ribbon: "${text}"`);
-        return;
+        return true;
       }
     }
     console.log(`  No ribbon button matched: ${pattern}`);
+    return false;
+  }
+
+  /**
+   * Click the first visible dialog / modal button whose text matches the given pattern.
+   * Used to confirm "are you sure?" prompts after cancel/reject actions.
+   * Returns true if a button was found and clicked, false otherwise.
+   */
+  async confirmOrderAction(pattern: RegExp): Promise<boolean> {
+    const selectors = [
+      'lb-modal button', 'lb-dialog button', '[role="dialog"] button',
+      '.modal button', '.dialog button',
+    ];
+    for (const sel of selectors) {
+      const buttons = this.page.locator(sel).filter({ visible: true });
+      const count = await buttons.count();
+      for (let i = 0; i < count; i++) {
+        const text = (await buttons.nth(i).textContent() || '').trim();
+        if (pattern.test(text)) {
+          await buttons.nth(i).click();
+          await this.page.waitForTimeout(1500);
+          console.log(`  Confirmed dialog via "${text}"`);
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /**

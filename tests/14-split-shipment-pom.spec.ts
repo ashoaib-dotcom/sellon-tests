@@ -77,34 +77,89 @@ test('Step 1: Partial quantity confirmation (split shipment setup)', async () =>
   const rowCount = await ordersPage.getRowCount();
   console.log(`Rows: ${rowCount}`);
 
-  // Find the first New order
-  let foundRow = -1;
+  // Collect all New order IDs from visible rows
+  const newOrderIds: string[] = [];
   for (let i = 0; i < rowCount; i++) {
     const id     = (await ordersPage.getCellText(i, idColIdx)).trim();
     const status = (await ordersPage.getCellText(i, statusColIdx)).trim();
     console.log(`  Row ${i}: ID="${id}" Status="${status}"`);
-    if (id && status === 'New') { foundRow = i; targetOrderId = id; break; }
+    if (id && status === 'New') newOrderIds.push(id);
   }
 
-  if (foundRow === -1) {
+  if (newOrderIds.length === 0) {
     console.log('No New orders found — skipping');
     return;
   }
-  console.log(`Found New order: ${targetOrderId} (row ${foundRow})`);
 
-  // Open the order
-  await ordersPage.openOrderDetail(foundRow);
-  await page.waitForTimeout(3000);
-  await ss('split-step1-order-opened');
+  // Loop through New orders and pick the first one with qty > 1 or multiple items.
+  // Orders with a single item at qty=1 are left for the order-workflow test (test 11).
+  let allInputs = orderDetail.getVisibleInputs();
+  let inputCount = 0;
+  let btnCount   = 0;
 
-  // Go to Order items tab
-  const onItems = await clickTab('Order items');
-  if (!onItems) { console.log('Order items tab not found'); return; }
-  await ss('split-step1-order-items-tab');
+  for (const orderId of newOrderIds) {
+    console.log(`Checking order ${orderId} for splittable qty...`);
 
-  // Inspect all visible inputs to identify the quantity field
-  const allInputs = orderDetail.getVisibleInputs();
-  const inputCount = await allInputs.count();
+    await ordersPage.setTextFilter(idColIdx, orderId);
+    await page.waitForTimeout(1500);
+    if (await ordersPage.getRowCount() === 0) {
+      console.log(`  Order ${orderId} not found after filter — skipping`);
+      continue;
+    }
+
+    await ordersPage.openOrderDetail(0);
+    await page.waitForTimeout(3000);
+    await ss(`split-step1-${orderId}-opened`);
+
+    // Enter edit mode so that Confirm position buttons become visible
+    await orderDetail.clickRibbonButton(/^edit$/i);
+    await page.waitForTimeout(1500);
+
+    // Go to Order items tab
+    const onItems = await orderDetail.switchTab('Order items');
+    if (!onItems) {
+      console.log(`  Order items tab not found for ${orderId}`);
+      await orderDetail.close();
+      await page.waitForTimeout(1000);
+      await ordersPage.navigateToOrders();
+      await page.waitForTimeout(2000);
+      continue;
+    }
+
+    btnCount   = await orderDetail.countItemsOnOrderItemsTab();
+    allInputs  = orderDetail.getVisibleInputs();
+    inputCount = await allInputs.count();
+
+    // Check if splittable: multiple line items, or any input with numeric value > 1
+    let splittable = btnCount > 1;
+    if (!splittable) {
+      for (let i = 0; i < inputCount; i++) {
+        const val = await allInputs.nth(i).inputValue().catch(() => '');
+        const n   = parseInt(val);
+        if (!isNaN(n) && n > 1) { splittable = true; break; }
+      }
+    }
+
+    if (splittable) {
+      targetOrderId = orderId;
+      console.log(`Found splittable New order: ${targetOrderId} (items=${btnCount})`);
+      await ss('split-step1-order-items-tab');
+      break;
+    }
+
+    console.log(`  Order ${orderId}: single item qty=1 — skipping (order-workflow handles it)`);
+    await orderDetail.close();
+    await page.waitForTimeout(1000);
+    await ordersPage.navigateToOrders();
+    await page.waitForTimeout(2000);
+  }
+
+  if (!targetOrderId) {
+    console.log('No splittable New orders found — all have single item with qty=1');
+    return;
+  }
+
+  // Log all visible inputs for debugging
   console.log(`Visible inputs on Order items tab: ${inputCount}`);
   for (let i = 0; i < inputCount; i++) {
     const val         = await allInputs.nth(i).inputValue().catch(() => '');
@@ -114,12 +169,9 @@ test('Step 1: Partial quantity confirmation (split shipment setup)', async () =>
     console.log(`  Input[${i}]: type="${type}" name="${name}" placeholder="${placeholder}" value="${val}"`);
   }
 
-  // Find the Confirm position button count
-  const btnCount = await orderDetail.countItemsOnOrderItemsTab();
   console.log(`Confirm position buttons: ${btnCount}`);
-
   if (btnCount === 0) {
-    console.log('No confirm position buttons — order may not be New');
+    console.log('No confirm position buttons — order may not be in edit mode');
     return;
   }
 

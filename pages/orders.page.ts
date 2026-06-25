@@ -276,7 +276,7 @@ export class OrdersPage extends BasePage {
   async openOrderDetail(rowIndex: number) {
     const row = this.page.locator('tbody tr').nth(rowIndex);
     await row.dblclick();
-    await this.page.waitForTimeout(2000);
+    await this.page.waitForTimeout(4000);
     console.log(`  Opened detail for row ${rowIndex}`);
   }
 

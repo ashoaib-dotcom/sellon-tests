@@ -133,12 +133,22 @@ export class NavigationPage {
     await this.page.locator('.menu-icon').click();
     await this.page.waitForTimeout(2000);
 
-    // Click Orders using force
-    const ordersItem = this.page.locator('nav').getByText('Orders', { exact: true }).first();
-    await ordersItem.scrollIntoViewIfNeeded();
+    // Expand Orders parent if sub-menu not yet visible
+    const ordersItems = this.page.locator('nav').getByText('Orders', { exact: true });
+    if (await ordersItems.count() < 2) {
+      const parentItem = ordersItems.first();
+      await parentItem.scrollIntoViewIfNeeded();
+      await this.page.waitForTimeout(500);
+      await parentItem.click({ force: true });
+      await this.page.waitForTimeout(2000);
+    }
+
+    // Click the Orders sub-item
+    const subItem = this.page.locator('nav').getByText('Orders', { exact: true }).nth(1);
+    await subItem.scrollIntoViewIfNeeded();
     await this.page.waitForTimeout(500);
-    await ordersItem.click({ force: true });
-    await this.page.waitForTimeout(5000);
+    await subItem.dispatchEvent('click');
+    await this.page.waitForTimeout(15000);
 
     // Close sidebar
     await this.page.keyboard.press('Escape');

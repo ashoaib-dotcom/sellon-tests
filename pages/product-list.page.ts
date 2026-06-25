@@ -238,9 +238,14 @@ export class ProductListPage {
     if (await select.count() > 0) {
       await select.selectOption({ label: optionText });
     } else {
-      // Fallback: treat it as a custom dropdown — click the trigger then the option
-      await cell.click();
-      await this.page.getByRole('option', { name: optionText }).first().click();
+      // Custom dropdown: click the small arrow button to open it, then click the matching item.
+      const arrowBtn = cell.locator('button.form-button, button:has(.fa-sort-down), button:has(.fa-caret-down), button:has(.fa-chevron-down)').first();
+      if (await arrowBtn.count() > 0) {
+        await arrowBtn.click();
+      } else {
+        await cell.click();
+      }
+      await this.page.locator('.dropdown-item').filter({ hasText: optionText }).first().click();
     }
     await this.page.waitForTimeout(300);
   }

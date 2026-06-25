@@ -113,7 +113,24 @@ test('Step 1: Find single-item order and confirm positions @regression', async (
       continue;
     }
 
-    // Found a single-item order — record it
+    // Skip if the single item has qty > 1 — split-shipment test (14) handles those
+    const inputs     = orderDetail.getVisibleInputs();
+    const inpCount   = await inputs.count();
+    let   maxQty     = 0;
+    for (let j = 0; j < inpCount; j++) {
+      const n = parseInt(await inputs.nth(j).inputValue().catch(() => ''));
+      if (!isNaN(n) && n > maxQty) maxQty = n;
+    }
+    if (maxQty > 1) {
+      console.log(`  Skipping — single item has qty=${maxQty} > 1 (split-shipment test handles these)`);
+      await orderDetail.close();
+      await page.waitForTimeout(1000);
+      await ordersPage.navigateToOrders();
+      await page.waitForTimeout(2000);
+      continue;
+    }
+
+    // Found a single-item order with qty=1 — record it
     targetOrderId     = orderId;
     targetOrderStatus = newOrders.includes(orderId) ? ORDER_STATUS.NEW : ORDER_STATUS.CONFIRMED;
     console.log(`  Selected order ${orderId} (${targetOrderStatus}) — 1 item`);

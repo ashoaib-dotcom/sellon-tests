@@ -29,6 +29,7 @@
     "@types/ssh2-sftp-client": "^9.0.6",
     "dotenv": "^17.4.2",
     "ssh2-sftp-client": "^12.1.1",
+    "typescript": "^6.0.3",
     "xlsx": "^0.18.5"
   }
 }

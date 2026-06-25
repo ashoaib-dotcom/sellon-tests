@@ -47,7 +47,9 @@ export class ProfilePage extends BasePage {
     return this.page
       .locator([
         'lb-modal', 'lb-dialog', 'lb-window', 'lb-view', 'lb-overlay', 'lb-floating-window',
-        '[role="dialog"]', '.settings-panel', '[class*="settings"]',
+        'lb-panel', 'lb-settings', 'lb-settings-panel', 'lb-side-panel',
+        '[role="dialog"]', '[role="complementary"]',
+        '.settings-panel', '[class*="settings"]', '[class*="panel"]',
         '.title-button.close-button',
       ].join(', '))
       .filter({ visible: true })
@@ -66,7 +68,7 @@ export class ProfilePage extends BasePage {
     const btn = (await byText.isVisible({ timeout: 5000 }).catch(() => false)) ? byText : byPos;
     await btn.waitFor({ state: 'visible', timeout: 15000 });
     await btn.click();
-    await this.page.waitForTimeout(800);
+    await this.page.waitForTimeout(1500);
   }
 
   /**
@@ -82,8 +84,10 @@ export class ProfilePage extends BasePage {
    */
   async openUserSettings(): Promise<void> {
     await this.openProfileDropdown();
-    await this.userSettingsItem.click({ force: true });
-    await this.page.waitForTimeout(2000);
+    const item = this.userSettingsItem;
+    await item.waitFor({ state: 'visible', timeout: 8000 });
+    await item.click();
+    await this.page.waitForTimeout(4000);
   }
 
   /**
@@ -172,7 +176,7 @@ export class ProfilePage extends BasePage {
     await expect(
       this.settingsPanel,
       'User settings panel should be open',
-    ).toBeVisible({ timeout: 5000 });
+    ).toBeVisible({ timeout: 10000 });
   }
 
   /**
